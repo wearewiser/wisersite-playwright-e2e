@@ -1,0 +1,39 @@
+{
+  "name": "wisersite-payload-plugin-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright E2E suite for wisersite-and-payload-plugin's admin analytics dashboard, verified against the tenant Postgres analytics warehouse.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "test": "playwright test -c playwright.wisersite.config.ts",
+    "test:headed": "playwright test -c playwright.wisersite.config.ts --headed",
+    "test:ui": "playwright test -c playwright.wisersite.config.ts --ui",
+    "test:debug": "playwright test -c playwright.wisersite.config.ts --debug",
+    "test:report": "playwright show-report playwright-report-wisersite",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "format": "prettier --write \"**/*.{ts,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,json,md}\""
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "pg": "^8.23.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2",
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.23.1",
+    "@typescript-eslint/eslint-plugin": "^8.14.0",
+    "@typescript-eslint/parser": "^8.14.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-playwright": "^2.0.1",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3"
+  }
+}
