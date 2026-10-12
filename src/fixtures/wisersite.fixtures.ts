@@ -3,6 +3,7 @@ import { wisersiteEnv } from '../config/wisersite.env';
 import { TenantSqlClient } from '../db/wisersite-db-client';
 import { SourceToHireRepository } from '../db/repositories/wisersite/source-to-hire.repository';
 import { HiresTrendRepository } from '../db/repositories/wisersite/hires-trend.repository';
+import { WidgetRequestTracker } from '../network/wisersite/widget-request-tracker';
 import { AdminLoginPage } from '../pages/wisersite/admin-login.page';
 import { SourceToHirePage } from '../pages/wisersite/source-to-hire.page';
 
@@ -15,6 +16,8 @@ type WorkerFixtures = {
 type TestFixtures = {
   /** `page`, already authenticated against /admin as the seeded master user. */
   adminPage: Page;
+  /** Every `/api/widgets/:key` request the page makes — attached before any navigation. */
+  widgetRequests: WidgetRequestTracker;
   sourceToHirePage: SourceToHirePage;
 };
 
@@ -48,13 +51,18 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     { scope: 'worker' },
   ],
 
+  widgetRequests: async ({ page }, use) => {
+    await use(new WidgetRequestTracker(page));
+  },
+
   adminPage: async ({ page }, use) => {
     const login = new AdminLoginPage(page);
     await login.login(wisersiteEnv.ADMIN_EMAIL, wisersiteEnv.ADMIN_PASSWORD);
     await use(page);
   },
 
-  sourceToHirePage: async ({ adminPage }, use) => {
+  // Depends on `widgetRequests` so the tracker is listening before the board's first fetches.
+  sourceToHirePage: async ({ adminPage, widgetRequests: _widgetRequests }, use) => {
     const sourceToHirePage = new SourceToHirePage(adminPage);
     await sourceToHirePage.goto();
     await use(sourceToHirePage);

@@ -20,7 +20,12 @@ export default defineConfig({
 
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // Off locally by default so a genuine failure is never hidden behind a passing retry. Opt in
+  // per run with `npm run test:retry`, `--retries=<n>`, or `RETRIES=<n>` (e.g. when the dev
+  // server's on-demand compile makes a first page load time out). A test that fails and then
+  // passes on retry is reported as "flaky", not "passed", and `trace: 'on-first-retry'` below
+  // records a trace of the retried attempt.
+  retries: process.env.RETRIES ? Number(process.env.RETRIES) : process.env.CI ? 2 : 0,
   workers: 1,
   // Next.js dev mode compiles routes on demand — a route hit for the first time in a while
   // can take much longer than Playwright's 30s default test timeout to even render.

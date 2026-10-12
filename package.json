@@ -9,7 +9,9 @@
   },
   "scripts": {
     "test": "playwright test -c playwright.wisersite.config.ts",
+    "test:retry": "playwright test -c playwright.wisersite.config.ts --retries=1",
     "test:headed": "playwright test -c playwright.wisersite.config.ts --headed",
+    "test:headed:retry": "playwright test -c playwright.wisersite.config.ts --headed --retries=1",
     "test:ui": "playwright test -c playwright.wisersite.config.ts --ui",
     "test:debug": "playwright test -c playwright.wisersite.config.ts --debug",
     "test:report": "playwright show-report playwright-report-wisersite",

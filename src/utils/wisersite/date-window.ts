@@ -1,3 +1,9 @@
+import type {
+  DateWindow,
+  GlobalPresetLabel,
+  WidgetPresetValue,
+} from '../../types/wisersite/source-to-hire.types';
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
@@ -56,13 +62,8 @@ export function nthMonthDate(date: string, n: number): string {
   return toIsoDate(target);
 }
 
-export type DateWindow = { startDate: string; endDate: string };
-
 /** Matches `resolveGlobalDatePreset` — the page-level date-range picker's presets. */
-export function resolveGlobalPreset(
-  preset: 'Last 30 days' | 'Last 3 months' | 'Last 6 months' | 'Last 12 months',
-  now: Date = new Date(),
-): DateWindow {
+export function resolveGlobalPreset(preset: GlobalPresetLabel, now: Date = new Date()): DateWindow {
   const endDate = localTodayIso(now);
   switch (preset) {
     case 'Last 30 days':
@@ -82,7 +83,7 @@ export function resolveGlobalPreset(
  * `match-global`: the caller already has the active global range in that case.
  */
 export function resolveWidgetLocalPreset(
-  preset: 'Last 30 days' | 'Last 3 months' | 'Last 6 months' | 'Last 12 months',
+  preset: GlobalPresetLabel,
   now: Date = new Date(),
 ): DateWindow {
   const endDate = utcTodayIso(now);
@@ -93,4 +94,55 @@ export function resolveWidgetLocalPreset(
   const monthsBack = preset === 'Last 3 months' ? 3 : preset === 'Last 6 months' ? 6 : 12;
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (monthsBack - 1), 1));
   return { startDate: toIsoDate(start), endDate };
+}
+
+/** Inclusive number of calendar days in `window` (a one-day window is 1). */
+function windowLengthInDays({ startDate, endDate }: DateWindow): number {
+  return (requireIsoDate(endDate).getTime() - requireIsoDate(startDate).getTime()) / MS_PER_DAY + 1;
+}
+
+/**
+ * Matches the plugin's `previousWindow` — the equal-length window ending the day before
+ * `window` starts, both ends inclusive. This is what the Source to Hire summary tiles compare
+ * against, whichever preset (or custom range) produced `window`.
+ */
+export function previousWindow(window: DateWindow): DateWindow {
+  const previousEnd = nthDayDate(window.startDate, -1);
+  const previousStart = nthDayDate(previousEnd, -(windowLengthInDays(window) - 1));
+  return { startDate: previousStart, endDate: previousEnd };
+}
+
+/** `YYYY-MM-01` keys of every month from `startMonth` to `endMonth`, inclusive. */
+export function monthsInRange(startMonth: string, endMonth: string): string[] {
+  const months: string[] = [];
+  for (let month = startMonth; month <= endMonth; month = nthMonthDate(month, 1)) {
+    months.push(month);
+  }
+  return months;
+}
+
+/** `YYYY-MM-01` key of the month `date` falls in. */
+export function monthOf(date: string): string {
+  return `${date.slice(0, 7)}-01`;
+}
+
+/**
+ * Matches the Hires Trend by Source chart's `resolveMonthWindow` — which months the chart
+ * plots for each of its own "Time period" options. `match-global` takes the months the global
+ * range touches; every other option counts back from the current **UTC** month, inclusive.
+ */
+export function hiresTrendMonthWindow(
+  timePeriod: WidgetPresetValue,
+  globalRange: DateWindow,
+  now: Date = new Date(),
+): { startMonth: string; endMonth: string } {
+  if (timePeriod === 'match-global') {
+    return { startMonth: monthOf(globalRange.startDate), endMonth: monthOf(globalRange.endDate) };
+  }
+  const endMonth = monthOf(utcTodayIso(now));
+  if (timePeriod === 'last-30-days') {
+    return { startMonth: monthOf(nthDayDate(utcTodayIso(now), -29)), endMonth };
+  }
+  const monthsBack = timePeriod === 'last-3-months' ? 3 : timePeriod === 'last-6-months' ? 6 : 12;
+  return { startMonth: nthMonthDate(endMonth, -(monthsBack - 1)), endMonth };
 }
