@@ -7,9 +7,10 @@ description: Turn fetched Jira acceptance criteria, the app code map, the tenant
 
 Inputs from earlier phases, all in `/tmp/<KEY>-explore/`: `tickets.md` + `tickets.json`
 (validated), `code-map.md`, the data profile, `ui-notes.md` + dumps (including the
-`--compare-presets` tables). Output: `docs/test-plans/<KEY>.md` (committed with the tests; one
-file per epic, or per ticket when handed loose tickets), plus `docs/test-plans/<KEY>.business.json`
-(area names/intros and attention cards for `qa-business-report`).
+`--compare-presets` tables). Output: `docs/test-plans/<KEY>.md` (one file per epic, or per
+ticket when handed loose tickets), plus `docs/test-plans/<KEY>.business.json` (area names/intros
+and attention cards for `qa-business-report`). `docs/` is gitignored: both files stay on the
+author's machine, so specs and `src/` may cite a D-ID but must never need the file to run.
 
 **This file is mandatory.** `write-e2e-tests` refuses to start without it, and every AC ID in
 it must exist in `tickets.json`: the specs' `ac` annotations and the coverage map join on them.
@@ -43,6 +44,10 @@ Span, which presets have data, which measures are all zero, reachable edge cases
 
 - **One observable claim per scenario**, phrased as Given window / When action / Then value.
   "Widget works" is not a scenario.
+- **Every scenario is a UI scenario**: a user opens the board in the browser, acts, and reads
+  what's on screen. No browser-free or unit-style scenarios. An edge value today's data can't
+  produce on the page (e.g. a % change of exactly 10%) goes under Not tested, with the data
+  that would unlock it.
 - **Every AC appears** in the matrix, the Discrepancies table, or Not tested, with a reason.
   Cite ACs as numbered in `fetch-jira-tickets` (`WP23-87 AC 2.1.3`).
 - **Oracle is independent**: warehouse SQL (a repository method) + pure expectation code that

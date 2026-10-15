@@ -32,7 +32,8 @@ Postgres warehouse. See `README.md` for setup and the folder layout.
 - Specs hold test flow and assertions only. Every test declares the ACs it asserts and a
   plain-language title with `details({ ac, title, what, variant })`
   (`src/utils/playwright/test-annotations.ts`); an empty-state-only path calls
-  `markLimitedByData()`. Browser-free rule checks live in `tests/rules/`.
+  `markLimitedByData()`. Every test drives the UI the way a user would: no browser-free
+  tests.
 - Locators: role + exact name first, then the accessible table/status/combobox inside the
   widget root. Never hashed CSS-module classes. Read charts through their screen-reader tables.
 
@@ -44,7 +45,6 @@ npx eslint src tests --ext .ts             # 0 errors and 0 warnings
 npx prettier --write src tests docs        # not `npm run format`: it rewrites every .md file
 npx playwright test -c playwright.wisersite.config.ts <spec> --reporter=list
 npm run test:headed:retry                  # headed, with retries: the QA review run
-npm run test:rules                         # browser-free rule checks (no app needed)
 npm run test:tz:london -- <spec>           # also :utc / :auckland, for date-sensitive specs
 node .claude/skills/write-e2e-tests/scripts/check-oracle-independence.cjs --strict
 node .claude/skills/stabilize-e2e-tests/scripts/check-defect-labels.cjs --strict
@@ -73,4 +73,5 @@ quality, spot-checks values with saved SQL, and writes an HTML review to `report
 
 Defects: logged ones are in `../wisersite-and-payload-plugin/testing-docs/KNOWN-DEFECTS.md`;
 ones this suite found that aren't logged yet go in `docs/suspected-defects.md`. IDs for both
-live in `src/constants/wisersite/known-defects.constants.ts`.
+live in `src/constants/wisersite/known-defects.constants.ts`. `docs/` (test plans, suspected
+defects) is gitignored on purpose and stays local; tooling must cope when it's absent.

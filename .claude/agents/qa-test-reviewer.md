@@ -49,14 +49,15 @@ the scripts, the `review.json` format and the report builder. Then:
 
 1. **Contract** — `fetch-jira-tickets` for the scope (or the keys found in the tests' tags),
    validated `tickets.json`, the test plan in `docs/test-plans/`, `KNOWN-DEFECTS.md` and
-   `docs/suspected-defects.md`. Re-review: load the previous `review.json` and replay its
+   `docs/suspected-defects.md` (`docs/` is gitignored, so these two may be absent; that isn't a
+   finding). Re-review: load the previous `review.json` and replay its
    saved spot checks.
 2. **Read the suite** — every spec in scope, plus the components, repositories and
    expectations it uses. Run `ac-coverage.cjs` for the tag-based map, then confirm each AC
    against what the code really asserts; a tag that over-claims is a finding. Use
    `map-feature-code` where you need the app's semantics to judge an oracle.
 3. **Run** — environment check, static checks (typecheck, lint, oracle independence, defect
-   labels, `test:rules`), the headed main run with JSON, the headless 3× repeat for flaky or
+   labels), the headed main run with JSON, the headless 3× repeat for flaky or
    suspicious specs, timezone runs for date-sensitive specs, environment check again. Classify
    every non-pass (the builder separates new / known defect / suspected defect / environment).
 4. **Spot-check** — re-derive 1–3 values per ticket with your own SQL, **saved** with

@@ -77,12 +77,10 @@ npm run test:ui       # Playwright's UI mode
 npm run test:debug    # step through with the inspector
 npm run test:report   # open the last HTML report
 npm run test:headed:retry   # headed, with retries: what the QA reviewer runs
-npm run test:rules          # browser-free checks of the ticket rules (no app needed)
 npm run test:tz:london      # whole browser suite in Europe/London (also :utc, :auckland)
 ```
 
-The suite has two Playwright projects: `rules` (`tests/rules/`, no browser, no app) and
-`chromium` (`tests/e2e-wisersite/`). Global setup stops the run with an `ENVIRONMENT:` error if
+Every test lives in `tests/e2e-wisersite/` and drives the UI in Chromium. Global setup stops the run with an `ENVIRONMENT:` error if
 the app isn't reachable, instead of failing every test.
 
 Retries are off by default locally, so a real failure is never masked. To opt in for any run:

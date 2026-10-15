@@ -15,7 +15,7 @@ import { wisersiteEnv } from './src/config/wisersite.env';
  * does not start it, since it lives in a different repo/package manager.
  */
 export default defineConfig({
-  testDir: './tests',
+  testDir: './tests/e2e-wisersite',
   globalSetup: require.resolve('./tests/wisersite-global-setup.ts'),
 
   fullyParallel: false,
@@ -31,10 +31,7 @@ export default defineConfig({
   // can take much longer than Playwright's 30s default test timeout to even render.
   timeout: 60_000,
 
-  reporter: [
-    ['list'],
-    ['html', { open: 'never', outputFolder: 'playwright-report-wisersite' }],
-  ],
+  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report-wisersite' }]],
 
   use: {
     baseURL: wisersiteEnv.WISERSITE_BASE_URL,
@@ -52,10 +49,5 @@ export default defineConfig({
     timeout: 10_000,
   },
 
-  projects: [
-    // Browser-free checks that the oracles encode each ticket's rules at their boundaries
-    // (colour bands, AC 5 gating, rounding): cases today's data can't reach in the UI.
-    { name: 'rules', testDir: './tests/rules' },
-    { name: 'chromium', testDir: './tests/e2e-wisersite', use: { ...devices['Desktop Chrome'] } },
-  ],
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 });

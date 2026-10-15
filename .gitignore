@@ -16,4 +16,6 @@ Thumbs.db
 
 # QA review and business reports (regenerated per run; outside test-results/, which Playwright empties)
 reports/
+
+# Test plans and suspected-defect notes stay local to the author; tooling copes when they're absent
 docs/

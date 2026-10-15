@@ -12,7 +12,6 @@
     "test:retry": "playwright test -c playwright.wisersite.config.ts --retries=2",
     "test:headed": "playwright test -c playwright.wisersite.config.ts --headed",
     "test:headed:retry": "playwright test -c playwright.wisersite.config.ts --headed --retries=2",
-    "test:rules": "SKIP_APP_CHECK=1 playwright test -c playwright.wisersite.config.ts --project=rules",
     "test:tz:utc": "TZ=UTC TEST_TZ=UTC playwright test -c playwright.wisersite.config.ts --project=chromium",
     "test:tz:london": "TZ=Europe/London TEST_TZ=Europe/London playwright test -c playwright.wisersite.config.ts --project=chromium",
     "test:tz:auckland": "TZ=Pacific/Auckland TEST_TZ=Pacific/Auckland playwright test -c playwright.wisersite.config.ts --project=chromium",

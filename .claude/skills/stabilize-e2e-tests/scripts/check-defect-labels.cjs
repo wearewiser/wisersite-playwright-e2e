@@ -9,7 +9,8 @@
  * KNOWN-DEFECTS.md` and `docs/suspected-defects.md`, and the specs that use them. Reports:
  *  - known label whose ID is missing from KNOWN-DEFECTS.md, or marked fixed / superseded there;
  *  - suspected label that is now logged in KNOWN-DEFECTS.md (move it to KNOWN_DEFECTS), or
- *    missing from docs/suspected-defects.md, or closed there;
+ *    missing from docs/suspected-defects.md, or closed there (skipped when that file is absent:
+ *    `docs/` is gitignored and local to the author);
  *  - a constant no spec uses.
  * Read-only. Exit 1 with --strict when there is anything to fix.
  */
@@ -71,7 +72,8 @@ const source = fs.readFileSync(CONSTANTS, 'utf8');
 const known = readConstants(source, 'KNOWN_DEFECTS');
 const suspected = readConstants(source, 'SUSPECTED_DEFECTS');
 const knownRegister = readRegister(KNOWN_MD, 4);
-const suspectedRegister = readRegister(SUSPECTED_MD, 5) ?? {};
+// `docs/` is gitignored, so the suspected register only exists on the author's machine.
+const suspectedRegister = readRegister(SUSPECTED_MD, 5);
 const used = usedKeys();
 const problems = [];
 const rows = [];
@@ -91,6 +93,7 @@ for (const [key, id] of Object.entries(suspected)) {
   let verdict = 'ok: awaiting log / PO';
   if (knownRegister?.[id] !== undefined)
     verdict = 'PROBLEM: now in KNOWN-DEFECTS.md, move to KNOWN_DEFECTS';
+  else if (!suspectedRegister) verdict = 'ok: register not available (docs/ is local only)';
   else if (suspectedRegister[id] === undefined)
     verdict = 'PROBLEM: not in docs/suspected-defects.md';
   else if (closed(suspectedRegister[id]))

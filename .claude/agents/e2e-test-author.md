@@ -57,13 +57,16 @@ data that really exists.
    matrix with oracle, data dependency and expected outcome on current data, plus every AC/app
    discrepancy, and `docs/test-plans/<KEY>.business.json`. **Gate: phase 6 does not start
    until this file exists and covers every in-scope ticket.** Re-read it before phase 6.
+   `docs/` is gitignored: the plan stays local, so never let a committed file depend on it.
 6. **Implement** — `write-e2e-tests`. One spec per ticket under
-   `tests/e2e-wisersite/<board>/`, components per widget, oracles in `src/expectations/`,
-   boundary rules in `tests/rules/`. Every test declares `details({ ac, title, what, variant })`;
+   `tests/e2e-wisersite/<board>/`, components per widget, oracles in `src/expectations/`.
+   Every test drives the UI as a user would (no browser-free tests); edge values today's data
+   can't reach go in the plan's Not tested section. Every test declares
+   `details({ ac, title, what, variant })`;
    empty-state-only paths call `markLimitedByData()`; known / suspected defects are labelled,
    never `test.fail()`. `check-oracle-independence.cjs --strict` must pass.
 7. **Run and stabilise** — `stabilize-e2e-tests`. Environment check, typecheck, lint, oracle
-   and defect-label checks, `test:rules`, run the specs, fix test bugs, rerun flaky specs with
+   and defect-label checks, run the specs, fix test bugs, rerun flaky specs with
    `--repeat-each=3`, timezone runs for date-sensitive specs. Classify every remaining failure
    as test bug / app defect / data limitation / environment — never "fix" a test by weakening
    it to match a defect.

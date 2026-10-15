@@ -13,7 +13,7 @@ import { TenantSqlClient } from '../src/db/wisersite-db-client';
  *
  * It also checks the app answers at WISERSITE_BASE_URL, so a stopped dev server fails the run
  * once with a clear message instead of failing every test on `ERR_CONNECTION_REFUSED`.
- * `SKIP_APP_CHECK=1` skips that (the browser-free `rules` project doesn't need the app).
+ * `SKIP_APP_CHECK=1` skips that (for runs that don't open a page, e.g. `--list`).
  */
 export default async function globalSetup(): Promise<void> {
   const client = new TenantSqlClient();

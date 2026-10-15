@@ -20,7 +20,7 @@
  * Status per test: passed → Verified; passed + limited-by-data → Partly verified; failed +
  * known-defect → Known issue; failed + suspected-defect → Needs a decision; failed with no label →
  * New failure; app/DB unreachable → Not run (environment); skipped → Not run yet; flaky → Flaky.
- * Tests from the browser-free `rules` project get their own area. Read-only apart from --out.
+ * Read-only apart from --out.
  */
 const fs = require('fs');
 const path = require('path');
@@ -135,21 +135,14 @@ function main() {
   const total = tests.length;
   const c = countOf(tests);
 
-  // Areas: context order first, then any ticket the context didn't name; rules last.
-  const areaOf = (t) =>
-    t.project === 'rules' ? 'rules' : (t.ac[0] ?? '').split(' ')[0] || 'other';
+  // Areas: context order first, then any ticket the context didn't name.
+  const areaOf = (t) => (t.ac[0] ?? '').split(' ')[0] || 'other';
   const named = (ctx.sections ?? []).map((s) => s.ticket);
-  const keys = [
-    ...new Set([...named, ...tests.map(areaOf).filter((k) => k !== 'rules'), 'rules']),
-  ].filter((k) => tests.some((t) => areaOf(t) === k));
+  const keys = [...new Set([...named, ...tests.map(areaOf)])].filter((k) =>
+    tests.some((t) => areaOf(t) === k),
+  );
   const areaInfo = (k) =>
-    k === 'rules'
-      ? {
-          name: 'Business rules checked without the browser',
-          intro:
-            'The calculation rules from the tickets (colour bands, when a % change may show, rounding), checked directly at their edge values, including cases today’s data can’t reach on the page.',
-        }
-      : ((ctx.sections ?? []).find((s) => s.ticket === k) ?? { name: k, intro: '' });
+    (ctx.sections ?? []).find((s) => s.ticket === k) ?? { name: k, intro: '' };
 
   const tiles = ORDER.filter(
     (k) => c[k] || ['ok', 'limited', 'known', 'fail', 'notrun'].includes(k),
@@ -167,7 +160,7 @@ function main() {
     .map((k) => {
       const ts = tests.filter((t) => areaOf(t) === k);
       const info = areaInfo(k);
-      return `<a class="ov-row" href="#area-${esc(k)}"><div class="ov-name"><strong>${esc(info.name)}</strong><span class="muted">${k === 'rules' ? 'Rules' : esc(k)} · ${ts.length} checks</span></div>${bar(countOf(ts), ts.length)}</a>`;
+      return `<a class="ov-row" href="#area-${esc(k)}"><div class="ov-name"><strong>${esc(info.name)}</strong><span class="muted">${esc(k)} · ${ts.length} checks</span></div>${bar(countOf(ts), ts.length)}</a>`;
     })
     .join('');
 
@@ -217,7 +210,7 @@ function main() {
           return `<tr class="w-${worst(g)}"><td class="t-title"><strong>${esc(g[0].title)}</strong>${g[0].what ? `<div class="muted">${esc(g[0].what)}</div>` : ''}${notes.map((n) => `<div class="note">${esc(n)}</div>`).join('')}</td><td class="t-res">${result}</td><td class="t-cnt">${g.length}</td></tr>`;
         })
         .join('');
-      return `<section class="card" id="area-${esc(k)}"><div class="sec-head"><div><span class="ticket">${k === 'rules' ? 'RULES' : esc(k)}</span><h2>${esc(info.name)}</h2><p class="muted">${esc(info.intro)}</p></div><div class="sec-bar">${bar(countOf(ts), ts.length)}<div class="muted small">${ts.length} checks</div></div></div><table><thead><tr><th>What is tested</th><th>Result today</th><th class="t-cnt">Checks</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+      return `<section class="card" id="area-${esc(k)}"><div class="sec-head"><div><span class="ticket">${esc(k)}</span><h2>${esc(info.name)}</h2><p class="muted">${esc(info.intro)}</p></div><div class="sec-bar">${bar(countOf(ts), ts.length)}<div class="muted small">${ts.length} checks</div></div></div><table><thead><tr><th>What is tested</th><th>Result today</th><th class="t-cnt">Checks</th></tr></thead><tbody>${rows}</tbody></table></section>`;
     })
     .join('');
 

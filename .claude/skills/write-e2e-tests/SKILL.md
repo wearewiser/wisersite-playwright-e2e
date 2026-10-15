@@ -22,7 +22,6 @@ reference implementation.
 | Layer | Path | Holds |
 |---|---|---|
 | Spec | `tests/e2e-wisersite/<board>/<widget-or-ticket>.spec.ts` | Test flow + assertions only. Header JSDoc: ticket key, summary, ACs paraphrased |
-| Rules spec | `tests/rules/<board>.rules.spec.ts` | Browser-free checks of pure expectation functions at the ticket's boundary values (`npm run test:rules`, `rules` project). Synthetic inputs only |
 | Test labels | `src/utils/playwright/test-annotations.ts` | `details()`, `markKnownDefect()`, `markSuspectedDefect()`, `markLimitedByData()` |
 | Defect IDs | `src/constants/wisersite/known-defects.constants.ts` | `KNOWN_DEFECTS` (from KNOWN-DEFECTS.md), `SUSPECTED_DEFECTS` (from `docs/suspected-defects.md`) |
 | Page | `src/pages/wisersite/<board>.page.ts` | Extends `BasePage`: route, `<h1>`, page-level flows (global date filter), composes components |
@@ -35,6 +34,10 @@ reference implementation.
 | Utils | `src/utils/{format,dom,playwright,wisersite}/`, `src/utils/sort.ts` | Parsing/formatting, date maths, CSS helpers, table snapshots |
 | Network | `src/network/wisersite/widget-request-tracker.ts` | Request params via the `widgetRequests` fixture |
 | Fixtures | `src/fixtures/wisersite.fixtures.ts` | Worker-scoped repositories, test-scoped page objects |
+
+Every spec lives under `tests/e2e-wisersite/<board>/` (the config's only `testDir`) and drives
+the UI the way a user would. No browser-free tests: an edge case today's data can't reach on
+the page is a gap in the test plan, not a unit test.
 
 Reuse before adding. Check `utils/`, `expectations/`, `DateRangePicker`,
 `snapshotTableBodyRows`, `parseLocaleCount`/`formatLocaleCount` and `date-window.ts` first.
@@ -88,6 +91,9 @@ test(
 - Find data before settling for empty: when a preset has none, search for a custom window
   that does (`findComparisonWindow` in `src/utils/wisersite/comparison-window.ts`, per-day
   counts from the repository) and skip only when nothing in the data qualifies.
+- Window searches must stay fast when nothing qualifies, because that's exactly when the test
+  should skip quickly. Build running totals once and read each candidate window from them in
+  O(1) (as `findComparisonWindow` does); never rescan the per-day rows for every candidate.
 - Data-dependent: branch to the empty-state assertion when SQL says there's no data, and call
   `markLimitedByData('<what could only be checked at zero, in data terms>')` on that path; use
   `test.skip(condition, '<why, in data terms>')` only when nothing is observable. Log the
@@ -112,7 +118,7 @@ test(
 (conditional skips/expects are allowed by config: see `.eslintrc.cjs`; anything else that warns
 is real), `node .claude/skills/write-e2e-tests/scripts/check-oracle-independence.cjs --strict`
 passes (cite the AC, "AC silent: per app <file:line>", or a D-ID wherever the oracle borrows
-from the app; `oracle-ok: <reason>` for reviewed exceptions), `npm run test:rules` passes,
+from the app; `oracle-ok: <reason>` for reviewed exceptions),
 `npx prettier --write src tests docs` has been run (not `npm run format`, which rewrites every
 Markdown file in the repo), and
 every matrix scenario ID appears in a test title or comment. Then hand over to

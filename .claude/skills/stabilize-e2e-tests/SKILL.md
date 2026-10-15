@@ -32,7 +32,6 @@ reason). Then the static guards:
 ```bash
 node .claude/skills/write-e2e-tests/scripts/check-oracle-independence.cjs --strict
 node .claude/skills/stabilize-e2e-tests/scripts/check-defect-labels.cjs --strict
-npm run test:rules
 ```
 
 `check-defect-labels` reports labels whose defect is fixed or superseded in KNOWN-DEFECTS.md

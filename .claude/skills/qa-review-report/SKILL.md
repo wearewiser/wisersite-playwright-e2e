@@ -25,10 +25,12 @@ the previous findings as the starting list. Set each finding's `status` to `fixe
 - Scope with no key: collect keys from the tests' tags (`grep -rhoE "@WP23-[0-9]+" …` or the
   `ac` annotations) and from the specs, then fetch those plus their epic, so tickets with **no**
   spec still show up.
-- Test plan: `docs/test-plans/<KEY>.md`. Missing plan = a **major** finding (the matrix is the
-  contract the author must write before coding).
+- Test plan: `docs/test-plans/<KEY>.md`. `docs/` is gitignored and stays on the author's
+  machine, so a missing plan is **not** a finding: note "test plan not available (local only)"
+  and judge AC coverage from the tickets and the tests' AC tags instead.
 - Defect registers: `../wisersite-and-payload-plugin/testing-docs/KNOWN-DEFECTS.md` and
-  `docs/suspected-defects.md`.
+  `docs/suspected-defects.md` (local only, like the test plan; when it's absent, take suspected
+  defects from `SUSPECTED_DEFECTS` in `src/constants/wisersite/known-defects.constants.ts`).
 - Semantics: `map-feature-code` only where you need to judge whether an oracle is right.
 
 ## 2. Run the suite
@@ -71,7 +73,6 @@ PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/<SCOPE>-review/run-main.json \
   npm run typecheck && npx eslint src tests --ext .ts
   node .claude/skills/write-e2e-tests/scripts/check-oracle-independence.cjs
   node .claude/skills/stabilize-e2e-tests/scripts/check-defect-labels.cjs
-  npm run test:rules
   ```
 
 ## 3. Review checklist
@@ -122,7 +123,7 @@ Record each check (`pass` / `warn` / `fail` / `n/a`) with one line of evidence. 
 11. **Strong negatives**: hidden/empty states asserted positively (the widget is absent *and*
     SQL says no data), not just "no error".
 12. **No hard-coded dates or data values** — windows from today or request params; grep for
-    `20\d\d-\d\d` and literal counts (synthetic inputs in `tests/rules/` are fine).
+    `20\d\d-\d\d` and literal counts.
 13. **Skips** (`test.skip`, `test.fixme`): each has a data-terms reason and is decided from
     Postgres at runtime. A skip that always fires on this tenant = untested AC (list it).
 14. **Defect labels**: tests that hit a logged defect fail red with `markKnownDefect()` citing
@@ -144,16 +145,16 @@ Record each check (`pass` / `warn` / `fail` / `n/a`) with one line of evidence. 
 18. Zero / single / many: 0 hires, one source, exactly N and N+1 sources at a top-N cutoff,
     ties, a source with 0 in one measure, very large numbers (locale separators).
 19. Percent and averages: division by zero shows "—", rounding matches the AC, previous-period
-    comparison availability. Boundary values are covered in `tests/rules/` where the UI can't
-    reach them.
+    comparison availability. Boundary values the UI can't reach on current data are listed as
+    gaps with the data that would unlock them.
 
 **D. Execution health**
 20. Main run counts; every failure classified (test bug / app defect / data limitation /
     environment) with evidence from the log, `error-context.md` and, where it matters, SQL.
 21. Flaky tests (passed on retry or not 3/3 in the repeat run), with the likely cause.
-22. Duration outliers (> 30 s per test) and why.
-23. Typecheck clean, lint 0 errors and 0 warnings, oracle and defect-label checks clean,
-    `test:rules` green.
+22. Duration outliers (> 30 s per test) and why. A slow oracle helper (e.g. a window search
+    that rescans per-day rows for every candidate) is a test bug.
+23. Typecheck clean, lint 0 errors and 0 warnings, oracle and defect-label checks clean.
 
 **E. Structure (CLAUDE.md rules)**
 24. Page = route, `<h1>`, page flows, one component per widget. Component = locators +
@@ -162,7 +163,10 @@ Record each check (`pass` / `warn` / `fail` / `n/a`) with one line of evidence. 
 25. Locators: role + exact name, accessible table/status/combobox inside the widget root;
     no hashed CSS-module classes, no `nth()` without a reason; charts read through their
     screen-reader tables.
-26. Readability: test names state the behaviour and the AC; `title`/`what` read well for
+26. UI only: every test opens the board in the browser and asserts what a user sees. A test
+    that only calls expectation or utility functions, or a spec outside `tests/e2e-wisersite/`,
+    is a finding.
+27. Readability: test names state the behaviour and the AC; `title`/`what` read well for
     business readers; failure messages identify the window and expected vs actual values.
 
 ## 4. Independent spot checks (saved, replayable)

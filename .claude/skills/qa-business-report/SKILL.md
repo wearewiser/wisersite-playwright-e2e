@@ -28,7 +28,8 @@ self-contained file to open or attach). Nothing here touches tests, the app or J
 - **Runtime labels.** `markLimitedByData()` → Partly verified, `markKnownDefect()` → Known
   issue, `markSuspectedDefect()` → Needs a decision. Their text appears as notes, so write them
   in plain language too.
-- **Context file** `docs/test-plans/<KEY>.business.json` (committed next to the test plan):
+- **Context file** `docs/test-plans/<KEY>.business.json` (local, next to the test plan;
+  `docs/` is gitignored):
   area names and intros per ticket, the "needs attention" cards, and optional extra notes per
   check title. See the script header for the shape; `docs/test-plans/WP23-62.business.json`
   is the reference. Update the cards when defects or data change.
