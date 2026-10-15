@@ -82,19 +82,19 @@ export function expectedHiresTrendTable({
   return table;
 }
 
-/** The sources a table plots as solid lines (its comparison columns excluded). */
+/** WP23-158 AC 1.3 / 2.1: the sources a table plots as solid lines (comparison columns excluded). */
 export function plottedSources(table: HiresByMonthTable): string[] {
   return Object.keys(Object.values(table)[0] ?? {}).filter(
     (label) => !label.endsWith(PRIOR_SUFFIX),
   );
 }
 
-/** Whether a table carries any comparison ("<source> (prior)") columns. */
+/** WP23-158 AC 3 / AC 5: whether a table carries any comparison ("<source> (prior)") columns. */
 export function hasComparisonSeries(table: HiresByMonthTable): boolean {
   return Object.keys(Object.values(table)[0] ?? {}).some((label) => label.endsWith(PRIOR_SUFFIX));
 }
 
-/** What the hover tooltip should list for `month`: each series' hires, or "No data". */
+/** WP23-158 AC 4: what the hover tooltip lists for `month`: each series' hires, or "No data". */
 export function expectedTooltipRows(
   table: HiresByMonthTable,
   month: string,

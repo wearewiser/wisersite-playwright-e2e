@@ -76,7 +76,14 @@ npm run test:headed  # watch it run
 npm run test:ui       # Playwright's UI mode
 npm run test:debug    # step through with the inspector
 npm run test:report   # open the last HTML report
+npm run test:headed:retry   # headed, with retries: what the QA reviewer runs
+npm run test:rules          # browser-free checks of the ticket rules (no app needed)
+npm run test:tz:london      # whole browser suite in Europe/London (also :utc, :auckland)
 ```
+
+The suite has two Playwright projects: `rules` (`tests/rules/`, no browser, no app) and
+`chromium` (`tests/e2e-wisersite/`). Global setup stops the run with an `ENVIRONMENT:` error if
+the app isn't reachable, instead of failing every test.
 
 Retries are off by default locally, so a real failure is never masked. To opt in for any run:
 
@@ -119,7 +126,14 @@ It runs these phases, and each skill also works on its own:
 | `explore-live-ui` | Live aria tree, widget requests and saved state at localhost:3000 |
 | `design-test-scenarios` | AC → scenario matrix in `docs/test-plans/<KEY>.md` |
 | `write-e2e-tests` | Specs, components, repositories, expectations |
-| `stabilize-e2e-tests` | Run, diagnose, de-flake, classify failures |
+| `stabilize-e2e-tests` | Run, diagnose, de-flake, classify failures; timezone runs; defect-label check |
+| `qa-review-report` | Senior QA review: AC coverage map, checklist, saved spot checks, HTML review in `reports/qa-review/` |
+| `qa-business-report` | Plain-language coverage report for stakeholders in `reports/business/` |
+
+To review tests, ask for the **`qa-test-reviewer`** agent ("use qa-test-reviewer for WP23-62",
+or "re-review WP23-62" after fixes). It never edits tests. Every test carries its AC IDs and a
+plain-language title (`details()` in `src/utils/playwright/test-annotations.ts`), which is
+what the coverage map and the business report read.
 
 `.mcp.json` registers the Atlassian and Playwright MCP servers. Approve them on first launch,
 and run `/mcp` to log in to Atlassian. `.claude/settings.json` pre-approves the read-only and

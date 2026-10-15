@@ -42,7 +42,15 @@ with `git log --oneline -1`). Never edit it. Produce notes per widget in
 6. **Local controls**: option values/labels, defaults, whether they reset when the global
    filter changes, whether they are contained (don't touch other widgets).
 7. **Divergences from the ticket**: anything the code does differently from the AC, with
-   `file:line`. These go to the scenario matrix as discrepancies.
+   `file:line`. These go to the scenario matrix as discrepancies. Check especially:
+   - **window semantics**: does a widget's "Last 3 months" compute the same dates as the global
+     preset of that name (rolling vs calendar months, UTC vs local today)?
+   - **gating bounds**: where do `minDate`/`maxDate` come from, and what's the fallback when
+     the analytics date-range API is missing? Bounds are the app's view, not the data's.
+   - **copy**: labels and captions vs the AC's exact wording.
+8. **What the oracle may borrow**: only semantics the ticket is silent on (rounding, tie-break,
+   month arithmetic). Note each as "AC silent: per app `file:line`": that exact phrase is what
+   `check-oracle-independence.cjs` accepts. Anything the ticket defines comes from the ticket.
 
 Use the app's own unit tests (`*.test.ts` next to each file) to confirm edge-case intent, but
 write the test oracle independently — the e2e suite must not import app code.

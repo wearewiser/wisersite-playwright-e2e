@@ -15,7 +15,7 @@ import { wisersiteEnv } from './src/config/wisersite.env';
  * does not start it, since it lives in a different repo/package manager.
  */
 export default defineConfig({
-  testDir: './tests/e2e-wisersite',
+  testDir: './tests',
   globalSetup: require.resolve('./tests/wisersite-global-setup.ts'),
 
   fullyParallel: false,
@@ -38,6 +38,9 @@ export default defineConfig({
 
   use: {
     baseURL: wisersiteEnv.WISERSITE_BASE_URL,
+    // `npm run test:tz:<zone>` sets both TZ (the oracle's date maths in Node) and TEST_TZ (the
+    // browser), to catch the month/day-shift class of bug (KNOWN-DEFECTS TZ-1). Unset = local.
+    ...(process.env.TEST_TZ ? { timezoneId: process.env.TEST_TZ } : {}),
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -49,5 +52,10 @@ export default defineConfig({
     timeout: 10_000,
   },
 
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    // Browser-free checks that the oracles encode each ticket's rules at their boundaries
+    // (colour bands, AC 5 gating, rounding): cases today's data can't reach in the UI.
+    { name: 'rules', testDir: './tests/rules' },
+    { name: 'chromium', testDir: './tests/e2e-wisersite', use: { ...devices['Desktop Chrome'] } },
+  ],
 });

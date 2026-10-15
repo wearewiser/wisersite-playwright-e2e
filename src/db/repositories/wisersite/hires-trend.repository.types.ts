@@ -8,7 +8,7 @@ export type HiresTrendRawRow = {
 
 /** One month/source cell from the Hires Trend by Source chart's underlying data. */
 export type HiresTrendRow = {
-  /** `YYYY-MM-01` — matches the app's `coerceMonth`. */
+  /** `YYYY-MM-01`, the first day of the month. */
   month: string;
   sourceChannel: string;
   hires: number;

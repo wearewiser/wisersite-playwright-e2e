@@ -77,11 +77,18 @@ function collectTests(report, outDir) {
           title: [...nextTrail, spec.title].join(' › '),
           project: t.projectName,
           status: t.status, // expected | unexpected | flaky | skipped
-          expectedStatus: t.expectedStatus, // passed | failed (test.fail) | skipped
+          expectedStatus: t.expectedStatus, // passed | failed (test.fail, not allowed) | skipped
           finalStatus: last.status,
           attempts: results.length,
           duration: results.reduce((sum, r) => sum + (r.duration ?? 0), 0),
-          annotations: [...(t.annotations ?? []), ...(spec.annotations ?? [])],
+          annotations: [
+            ...(t.annotations ?? []),
+            ...(spec.annotations ?? []),
+            ...results.flatMap((r) => r.annotations ?? []),
+          ].filter(
+            (a, i, all) =>
+              all.findIndex((b) => b.type === a.type && b.description === a.description) === i,
+          ),
           errors: [...new Set(errors)],
           attachments,
         });
@@ -93,15 +100,46 @@ function collectTests(report, outDir) {
   return rows;
 }
 
+const hasLabel = (row, type) => row.annotations.some((a) => a.type === type);
+/** The app or a dependency was unreachable: the run says nothing about the feature. */
+const ENVIRONMENT_ERROR = /ERR_CONNECTION_REFUSED|ECONNREFUSED|ECONNRESET|net::ERR_|ENVIRONMENT:/;
+
+/**
+ * `failed` = a new failure; `known-defect` / `suspected-defect` = failed on a bug labelled with
+ * `markKnownDefect()` / `markSuspectedDefect()`; `environment` = failed because the app (or DB)
+ * was unreachable; `limited` = passed, but labelled `limited-by-data` (only the zero / empty
+ * case was exercised). `expected-fail` only appears if someone used `test.fail()`, which the
+ * repo rules forbid.
+ */
 function outcome(row) {
   if (row.status === 'skipped') return 'skipped';
   if (row.status === 'flaky') return 'flaky';
-  if (row.status === 'unexpected') return 'failed';
-  return row.expectedStatus === 'failed' ? 'expected-fail' : 'passed';
+  if (row.status === 'unexpected') {
+    if (row.errors.length && row.errors.every((e) => ENVIRONMENT_ERROR.test(e)))
+      return 'environment';
+    if (hasLabel(row, 'known-defect')) return 'known-defect';
+    if (hasLabel(row, 'suspected-defect')) return 'suspected-defect';
+    return 'failed';
+  }
+  if (row.expectedStatus === 'failed') return 'expected-fail';
+  return hasLabel(row, 'limited-by-data') ? 'limited' : 'passed';
 }
 
+const OUTCOMES = [
+  'passed',
+  'limited',
+  'failed',
+  'known-defect',
+  'suspected-defect',
+  'flaky',
+  'environment',
+  'expected-fail',
+  'skipped',
+];
+const OPTIONAL_OUTCOMES = new Set(['environment', 'expected-fail']);
+
 function summarise(rows) {
-  const counts = { passed: 0, failed: 0, flaky: 0, skipped: 0, 'expected-fail': 0 };
+  const counts = Object.fromEntries(OUTCOMES.map((k) => [k, 0]));
   for (const row of rows) counts[outcome(row)]++;
   return counts;
 }
@@ -140,7 +178,7 @@ function runSection(run, index) {
   return `<section>
     <h3>${esc(label)}</h3>
     <div class="tiles">
-      ${['passed', 'failed', 'flaky', 'expected-fail', 'skipped']
+      ${OUTCOMES.filter((k) => !OPTIONAL_OUTCOMES.has(k) || counts[k])
         .map(
           (k) =>
             `<div class="tile t-${k}"><div class="big">${counts[k]}</div><div>${k}</div></div>`,
@@ -154,7 +192,17 @@ function runSection(run, index) {
       Retries configured: ${esc(report.config?.projects?.[0]?.retries ?? '?')}.
       Slowest: ${slowest.map((r) => `${esc(r.title)} (${(r.duration / 1000).toFixed(1)}s)`).join('; ')}</p>
     <div class="filters" data-table="run-${index}">
-      Filter: ${['all', 'failed', 'flaky', 'expected-fail', 'skipped', 'passed']
+      Filter: ${[
+        'all',
+        'failed',
+        'known-defect',
+        'suspected-defect',
+        'environment',
+        'flaky',
+        'limited',
+        'skipped',
+        'passed',
+      ]
         .map((k) => `<button data-filter="${k}">${k}</button>`)
         .join(' ')}
     </div>
@@ -217,16 +265,32 @@ function findingsSection(findings = []) {
     .sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9))
     .map(
       (f) => `<div class="finding sev-${esc(f.severity)}">
-        <div>${pill(f.severity)} <strong>${esc(f.id)}</strong> ${esc(f.title)}
+        <div>${pill(f.severity)} ${f.status ? pill(f.status) : ''} <strong>${esc(f.id)}</strong> ${esc(f.title)}
           ${f.category ? `<span class="muted">· ${esc(f.category)}</span>` : ''}
           ${f.ticket ? `<span class="muted">· ${esc(f.ticket)}</span>` : ''}</div>
         ${f.file ? `<div><code>${esc(f.file)}${f.line ? `:${esc(f.line)}` : ''}</code></div>` : ''}
         ${f.detail ? `<p>${esc(f.detail)}</p>` : ''}
         ${f.evidence ? `<pre>${esc(f.evidence)}</pre>` : ''}
         ${f.recommendation ? `<p><strong>Recommendation:</strong> ${esc(f.recommendation)}</p>` : ''}
+        ${f.statusNote ? `<p><strong>Since the previous review:</strong> ${esc(f.statusNote)}</p>` : ''}
       </div>`,
     )
     .join('');
+}
+
+/** Re-review mode: `review.previousReview` set and findings carry `status`. */
+function reReviewSection(review) {
+  if (!review.previousReview) return '';
+  const findings = review.findings ?? [];
+  const by = (s) => findings.filter((f) => f.status === s).length;
+  return `<h3>Changes since the previous review</h3>
+    <p class="muted">Previous review: ${esc(review.previousReview)}</p>
+    <div class="tiles">
+      <div class="tile t-passed"><div class="big">${by('fixed')}</div><div>fixed</div></div>
+      <div class="tile t-flaky"><div class="big">${by('partially-fixed')}</div><div>partly fixed</div></div>
+      <div class="tile t-failed"><div class="big">${by('open')}</div><div>still open</div></div>
+      <div class="tile t-failed"><div class="big">${by('new')}</div><div>new</div></div>
+    </div>`;
 }
 
 function checksSection(checks = []) {
@@ -309,13 +373,18 @@ function main() {
   .pill.passed,.pill.pass,.pill.covered,.pill.asserted,.pill.approve { color: var(--ok); }
   .pill.failed,.pill.fail,.pill.blocker,.pill.not-covered,.pill.missing,.pill.changes-requested { color: var(--bad); }
   .pill.flaky,.pill.warn,.pill.major,.pill.partial,.pill.approve-with-comments { color: var(--warn); }
-  .pill.expected-fail,.pill.known-defect,.pill.minor,.pill.empty-state-only { color: var(--info); }
+  .pill.known-defect,.pill.minor,.pill.empty-state-only,.pill.limited { color: var(--info); }
+  .pill.suspected-defect,.pill.open,.pill.partially-fixed { color: var(--warn); }
+  .pill.expected-fail,.pill.environment { color: var(--bad); }
+  .pill.fixed { color: var(--ok); } .pill.new { color: var(--bad); }
   .pill.skipped,.pill.nit,.pill.n\\/a,.pill.not-tested-closed { color: var(--na); }
   .tiles { display:flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
   .tile { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; min-width: 90px; }
   .tile .big { font-size: 22px; font-weight: 700; }
   .t-passed .big { color: var(--ok); } .t-failed .big { color: var(--bad); } .t-flaky .big { color: var(--warn); }
-  .t-expected-fail .big { color: var(--info); } .t-skipped .big { color: var(--na); }
+  .t-known-defect .big, .t-limited .big { color: var(--info); } .t-suspected-defect .big { color: var(--warn); }
+  .t-expected-fail .big, .t-environment .big { color: var(--bad); }
+  .t-skipped .big { color: var(--na); }
   .finding { border-left: 4px solid var(--line); background: var(--card); padding: 8px 12px; margin: 10px 0; }
   .sev-blocker { border-color: var(--bad); } .sev-major { border-color: var(--warn); }
   .sev-minor { border-color: var(--info); } .sev-nit { border-color: var(--na); }
@@ -324,23 +393,30 @@ function main() {
   .filters button { font: inherit; padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line);
     background: var(--card); color: var(--fg); cursor: pointer; }
   nav a { margin-right: 12px; }
+  .env-alert { border: 2px solid var(--bad); border-radius: 8px; padding: 10px 14px; }
 </style></head><body>
 <h1>${esc(review.title ?? 'QA review')}</h1>
 <div class="muted">Scope ${esc(review.scope)} · reviewed ${esc(review.reviewedAt ?? new Date().toISOString())}</div>
 <div class="verdict">Verdict: ${pill(review.verdict ?? 'n/a')}</div>
 <div class="tiles">
   <div class="tile t-passed"><div class="big">${main.passed}</div><div>passed</div></div>
-  <div class="tile t-failed"><div class="big">${main.failed}</div><div>failed</div></div>
+  <div class="tile t-limited"><div class="big">${main.limited}</div><div>passed: limited by data</div></div>
+  <div class="tile t-failed"><div class="big">${main.failed}</div><div>failed: new</div></div>
+  <div class="tile t-known-defect"><div class="big">${main['known-defect']}</div><div>failed: known defect</div></div>
+  <div class="tile t-suspected-defect"><div class="big">${main['suspected-defect']}</div><div>failed: suspected defect</div></div>
   <div class="tile t-flaky"><div class="big">${main.flaky}</div><div>flaky</div></div>
-  <div class="tile t-expected-fail"><div class="big">${main['expected-fail']}</div><div>expected fail</div></div>
+  ${main.environment ? `<div class="tile t-environment"><div class="big">${main.environment}</div><div>environment (app/DB down)</div></div>` : ''}
+  ${main['expected-fail'] ? `<div class="tile t-expected-fail"><div class="big">${main['expected-fail']}</div><div>test.fail() (not allowed)</div></div>` : ''}
   <div class="tile t-skipped"><div class="big">${main.skipped}</div><div>skipped</div></div>
   <div class="tile"><div class="big">${sevCount('blocker')}/${sevCount('major')}/${sevCount('minor')}/${sevCount('nit')}</div><div>blocker/major/minor/nit</div></div>
 </div>
 <nav><a href="#summary">Summary</a><a href="#tickets">Tickets &amp; ACs</a><a href="#findings">Findings</a>
   <a href="#checks">Checks</a><a href="#spot">Spot checks</a><a href="#runs">Runs</a><a href="#gaps">Gaps</a><a href="#env">Environment</a></nav>
 
+${main.environment ? `<p class="env-alert"><strong>Environment failure:</strong> ${main.environment} test(s) failed because the app or database was unreachable. Those results say nothing about the feature; restart the app and rerun.</p>` : ''}
 <h2 id="summary">Summary</h2>
 <p>${esc(review.summary).replace(/\n/g, '<br>')}</p>
+${reReviewSection(review)}
 <h3>Top recommendations</h3>${list(review.recommendations)}
 
 <h2 id="tickets">Tickets and acceptance criteria</h2>${ticketsSection(review.tickets)}

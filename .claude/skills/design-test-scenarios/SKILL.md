@@ -5,9 +5,14 @@ description: Turn fetched Jira acceptance criteria, the app code map, the tenant
 
 # Design test scenarios: the AC → scenario matrix
 
-Inputs from earlier phases, all in `/tmp/<KEY>-explore/`: `tickets.md`, `code-map.md`, the
-data profile, `ui-notes.md` + dumps. Output: `docs/test-plans/<KEY>.md` (committed with the
-tests; one file per epic, or per ticket when handed loose tickets).
+Inputs from earlier phases, all in `/tmp/<KEY>-explore/`: `tickets.md` + `tickets.json`
+(validated), `code-map.md`, the data profile, `ui-notes.md` + dumps (including the
+`--compare-presets` tables). Output: `docs/test-plans/<KEY>.md` (committed with the tests; one
+file per epic, or per ticket when handed loose tickets), plus `docs/test-plans/<KEY>.business.json`
+(area names/intros and attention cards for `qa-business-report`).
+
+**This file is mandatory.** `write-e2e-tests` refuses to start without it, and every AC ID in
+it must exist in `tickets.json`: the specs' `ac` annotations and the coverage map join on them.
 
 ## Template
 
@@ -47,16 +52,31 @@ Span, which presets have data, which measures are all zero, reachable edge cases
 - **Windows are relative**: name the preset or a rule ("the widest preset with hires", "the
   board's `minDate`..today"), never a literal date. Custom-range scenarios compute dates from
   today or from the data span at runtime.
+- **Look for data before settling for an empty state.** Presets are only four windows; the
+  warehouse usually has data somewhere. For each scenario that needs data, search for a custom
+  range that has it (by SQL over `getDailyCounts`-style per-day counts; see
+  `src/utils/wisersite/comparison-window.ts` `findComparisonWindow`, which picked the
+  green/white/red AC 3 windows), within the data span and the board's selectable range. Only
+  when no window anywhere has the data is the scenario empty-state-only, and then say so.
 - **Data-dependent branches are explicit**: state what the test asserts when data exists and
   what it asserts otherwise (empty state, widget absent) or that it skips, with the message.
   Prefer asserting the empty-state path over skipping; skip only when neither path is
-  observable.
+  observable. Mark every empty-state-only scenario: the test calls `markLimitedByData()`
+  on that path so reports show it as "partly verified", never as plain green.
 - **Locator source** comes from `ui-notes.md` (role + name seen live), not from JSX.
 - **Discrepancies are not resolved by the test.** If the app contradicts the AC, the scenario
-  asserts the **AC** and is expected to fail. Mark it `test.fail()` only when it is logged in
-  `../wisersite-and-payload-plugin/testing-docs/KNOWN-DEFECTS.md` (cite the ID); otherwise
-  leave the AC assertion failing and put it first in the report as a suspected new defect
+  asserts the **AC** and fails. Label it `known-defect` (`markKnownDefect()`) when it is
+  logged in `../wisersite-and-payload-plugin/testing-docs/KNOWN-DEFECTS.md` (cite the ID).
+  Otherwise add a row to `docs/suspected-defects.md` (next `QA-<KEY>-<n>` ID) and label it
+  `suspected-defect` (`markSuspectedDefect()`); put it first in the report as a suspected new
+  defect
   (a human decides whether it's a bug or an AC change).
+- **Copy and window discrepancies from exploration** (`ui-notes.md` copy table and
+  `--compare-presets` `DIFFERENT` rows) each get a Discrepancies row with a D-ID. A constant
+  that holds app copy differing from the AC cites that D-ID in its comment.
+- **Tag each scenario with exact AC IDs**, as sub-specific as the scenario really asserts. A
+  scenario that only proves the parent ("AC 1") must not claim the children ("AC 1.3"); the
+  coverage map counts a broad tag for the parent only.
 - Cover the interactions the AC names: global ↔ local precedence ("contained"), reset on
   global change, persistence across reload, sort toggles, hover readouts, cross-widget
   consistency (same source colour/rate in two widgets).

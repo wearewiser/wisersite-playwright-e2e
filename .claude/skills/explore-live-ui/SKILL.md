@@ -24,6 +24,7 @@ node .claude/skills/explore-live-ui/scripts/explore.cjs --path /analytics/source
 | `--range 2026-07-21:2026-07-31` | Picks a custom range day by day in the calendar, Apply |
 | `--select "<h3 heading>\|<combobox name>=<option value>"` | Changes a widget-local select; repeatable |
 | `--hover "<css/role selector>"` | Hovers the first match before the snapshot (tooltips, readouts) |
+| `--compare-presets "<h3 heading>\|<combobox name>\|<widget key>"` | Applies each global preset and each of the widget's own period options, and prints a table of the window the widget requested for each, flagging `DIFFERENT` where a widget option and the global preset share a label but not the dates. Also prints the option labels |
 | `--headed` | Watch it run |
 
 Output: final URL + HTTP status + `<h1>`, the aria tree from the board heading down (calendar
@@ -34,6 +35,12 @@ evidence for the scenario matrix.
 
 The first hit on a route can take 30–60 s (Next.js dev compiles it on demand). Use a 240000 ms
 Bash timeout.
+
+**Run `--compare-presets` once for every widget with its own period control** (e.g.
+`"Source Performance Breakdown|Time period|sourcePerformanceBreakdown"`). Every `DIFFERENT` row
+is a discrepancy candidate for `design-test-scenarios`: same label, different window (this is
+how WP23-159's calendar-month "Last 3 months" should have been caught). A widget that sends no
+dates (e.g. a fixed 36-month fetch) shows `?..?`; record what it does instead.
 
 ## 2. Interactive: when the dump isn't enough
 
@@ -61,6 +68,11 @@ mutating it.
    selects persist or reset?
 6. **Divergences**: anything that differs from `map-feature-code` or the ticket (copy, order,
    rounding, a param not sent). These become discrepancy rows in `design-test-scenarios`.
+7. **Copy vs the ticket**: put every visible label the ACs quote or name (option labels,
+   captions, column headers, empty-state text) side by side with the AC wording in a table.
+   Any difference ("Compare 3 months" vs "vs 3 months ago") is a discrepancy candidate, even
+   when it looks cosmetic: the tests must not adopt the app's wording silently.
+8. **Same label, same meaning**: the `--compare-presets` table for each widget period control.
 
 Spot-check one or two numbers from the dump against `profile-tenant-data` ad-hoc SQL now. A
 mismatch here is cheaper to understand than a failing test later.

@@ -34,5 +34,13 @@ module.exports = {
     // bodies; it false-positives on our page-object locator-factory methods
     // (e.g. `pageLink(n): Locator`) which are the recommended POM pattern.
     'playwright/prefer-locator': 'off',
+    // Data-driven tests are this suite's documented pattern (CLAUDE.md, write-e2e-tests): a test
+    // decides from Postgres at runtime whether to assert the data path, the empty-state path, or
+    // to skip with a reason in data terms. A conditional `test.skip(cond, reason)` is allowed; an
+    // unconditional `test.skip()` / `test.only` still warns. Conditional expects are allowed
+    // because each branch asserts something; vacuous passes are caught instead by
+    // `markLimitedByData()` labels and the QA review checklist (B.9).
+    'playwright/no-skipped-test': ['warn', { allowConditional: true }],
+    'playwright/no-conditional-expect': 'off',
   },
 };

@@ -5,9 +5,20 @@ description: Fetch a Jira epic and all its child tickets (or a list of ticket ke
 
 # Fetch Jira tickets (read-only)
 
-Output: `/tmp/<KEY>-explore/tickets.md` containing, for the epic and **every** child: key,
-summary, status, type, full description, full acceptance criteria (they are usually inside the
-description — check custom fields too), notes/questions, and linked tickets.
+Output, both in `/tmp/<KEY>-explore/`, for the epic and **every** child:
+
+- `tickets.md`: **verbatim**, never summarised: key, summary, status, type, the full
+  description, the full acceptance criteria (usually inside the description; check custom
+  fields too), notes/questions, **every comment** (author, date, body), linked tickets.
+  Decisions often live in comments (e.g. WP23-159's "requirements still stand" thread).
+- `tickets.json`: the same, machine-readable, for the coverage map and the reports. Shape and
+  rules are in `scripts/validate-tickets.cjs`; each AC is `{ "id": "AC 1.1", "text": "<verbatim>" }`.
+
+Then validate. Don't start test design on an invalid file:
+
+```bash
+node .claude/skills/fetch-jira-tickets/scripts/validate-tickets.cjs /tmp/<KEY>-explore
+```
 
 ## 1. Atlassian MCP available in this session
 
@@ -16,7 +27,10 @@ Check with `ToolSearch` for `atlassian`. If `getJiraIssue` / `searchJiraIssuesUs
 - Epic: `getJiraIssue` on the key.
 - Children: JQL `parent = <EPIC> OR "Epic Link" = <EPIC> ORDER BY key` (both forms — team-managed
   and company-managed projects differ). Page until no more results.
-- Fetch each child individually for the full description; search results truncate.
+- Fetch each child individually with `fields: ["summary","description","status","issuetype","comment","issuelinks"]`
+  and `responseContentFormat: "markdown"`; search results truncate and omit comments.
+- Write the tool output's description and comment bodies into the files as they are. Strip
+  image `blob:` URLs only.
 
 ## 2. Fallback — headless Claude in the app repo
 
@@ -25,7 +39,7 @@ read-only headless session there and capture its output:
 
 ```bash
 mkdir -p /tmp/<KEY>-explore
-(cd ../wisersite-and-payload-plugin && claude -p "Using the Atlassian Jira MCP tools (read-only), fetch <KEY> and every child issue (JQL: parent = <KEY> OR \"Epic Link\" = <KEY>). For the epic and EACH child output verbatim: key, summary, status, type, full description, and full acceptance criteria (check custom fields too). Do not summarize or omit anything. Do not modify anything in Jira." \
+(cd ../wisersite-and-payload-plugin && claude -p "Using the Atlassian Jira MCP tools (read-only), fetch <KEY> and every child issue (JQL: parent = <KEY> OR \"Epic Link\" = <KEY>), each with fields summary, description, status, issuetype, comment, issuelinks. For the epic and EACH child output verbatim: key, summary, status, type, full description, full acceptance criteria (check custom fields too) and every comment with author and date. Do not summarize or omit anything. Do not modify anything in Jira." \
   --allowedTools "mcp__atlassian__getAccessibleAtlassianResources,mcp__atlassian__getJiraIssue,mcp__atlassian__searchJiraIssuesUsingJql" \
   --output-format text > /tmp/<KEY>-explore/tickets.md 2>&1)
 ```
@@ -44,7 +58,11 @@ Option 1 should normally be available: this repo's `.mcp.json` registers `atlass
 
 - **Status matters**: `Done` → test it. `Closed` / `Won't Do` → usually superseded; report it,
   don't test it, unless the user asks. Say which later tickets replaced it if that's evident.
-- Number every AC (`WP23-87 AC 2.1.3`) — the scenario matrix and spec comments cite these.
+- Number every AC **with the ticket's own numbering** (`WP23-87 AC 2.1.3`): the scenario
+  matrix, the `ac` annotations on tests and the coverage map all join on these IDs. Never
+  renumber. Record gaps and oddities in `numberingNotes` (WP23-87 has no AC 4; WP23-157's
+  "Functionality" list becomes `Func 1.2.1`; a struck-out AC stays listed as out of scope).
+  A parent line with its own wording ("Headline stats: … shall display") is an AC too.
 - Capture Q&A in NOTES ("Does the widget period overrule the global filter? — Yes, contained");
   they are often the real spec.
 - Flag ACs that are ambiguous or can't be true for this domain (e.g. "top 6 by Total visitors"

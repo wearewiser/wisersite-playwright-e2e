@@ -1,6 +1,6 @@
 ---
 name: e2e-test-author
-description: Turns a Jira epic or ticket(s) for the wisersite-and-payload-plugin analytics dashboards into verified Playwright E2E tests in this repo. Fetches every ticket's acceptance criteria, studies the app code, profiles the tenant warehouse, explores the live UI at localhost:3000, writes a reviewed scenario matrix, then implements specs that compare the UI against independent read-only SQL — following this repo's strict page-object structure — and runs them until stable. Give it an epic key (e.g. WP23-62) or ticket keys, and optionally the target board/route. Writes only inside this repo (tests, src, docs/test-plans); read-only against Jira, Postgres and the app.
+description: Turns a Jira epic or ticket(s) for the wisersite-and-payload-plugin analytics dashboards into verified Playwright E2E tests in this repo. Fetches every ticket's acceptance criteria verbatim, studies the app code, profiles the tenant warehouse, explores the live UI at localhost:3000, writes a reviewed scenario matrix (mandatory before any code), then implements AC-tagged specs that compare the UI against independent read-only SQL — following this repo's strict page-object structure — runs them until stable, self-reviews against the QA checklist, and builds a business report. Give it an epic key (e.g. WP23-62) or ticket keys, and optionally the target board/route. Writes only inside this repo (tests, src, docs/test-plans, docs/suspected-defects.md, reports/); read-only against Jira, Postgres and the app.
 tools: Read, Grep, Glob, Bash, Edit, Write, Skill, ToolSearch, mcp__atlassian__getAccessibleAtlassianResources, mcp__atlassian__getJiraIssue, mcp__atlassian__searchJiraIssuesUsingJql, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_fill_form, mcp__playwright__browser_select_option, mcp__playwright__browser_hover, mcp__playwright__browser_press_key, mcp__playwright__browser_wait_for, mcp__playwright__browser_evaluate, mcp__playwright__browser_network_requests, mcp__playwright__browser_take_screenshot
 model: opus
 ---
@@ -39,8 +39,9 @@ data that really exists.
 
 ## Workflow — each phase uses one skill; don't skip phases
 
-1. **Tickets** — `fetch-jira-tickets`. Get the epic and every child with full description and
-   AC. Note each ticket's status: Closed/Won't Do tickets are reported, not tested, unless asked.
+1. **Tickets** — `fetch-jira-tickets`. Get the epic and every child **verbatim**, with
+   comments, into `tickets.md` + `tickets.json`, and run `validate-tickets.cjs` until it's
+   valid. Note each ticket's status: Closed/Won't Do tickets are reported, not tested, unless asked.
 2. **App code** — `map-feature-code`. For every widget/flow in scope, record: route, data
    function + SQL filters, params sent, shaping (top-N, sort, tie-break, rounding, formatting),
    empty/hidden states, accessible roles/names, local controls, known defects in
@@ -49,24 +50,41 @@ data that really exists.
    per month, per source, zero-valued measures like "0 hires"). Decide which ACs are
    *exercisable* on this data and which will only hit empty states.
 4. **Live UI** — `explore-live-ui`. Confirm the real route, DOM/aria structure, network params
-   (e.g. `minDate`/`maxDate`), persisted state, and any divergence from the code reading.
-   Explore before writing locators — never guess a locator from source alone.
+   (e.g. `minDate`/`maxDate`), persisted state, and any divergence from the code reading. Run
+   `--compare-presets` for every widget with its own period control, and table visible copy
+   against the AC wording. Explore before writing locators — never guess a locator from source alone.
 5. **Scenarios** — `design-test-scenarios`. Write `docs/test-plans/<KEY>.md`: the AC→scenario
    matrix with oracle, data dependency and expected outcome on current data, plus every AC/app
-   discrepancy. This is the contract the code must satisfy; re-read it before phase 6.
+   discrepancy, and `docs/test-plans/<KEY>.business.json`. **Gate: phase 6 does not start
+   until this file exists and covers every in-scope ticket.** Re-read it before phase 6.
 6. **Implement** — `write-e2e-tests`. One spec per ticket under
-   `tests/e2e-wisersite/<board>/`, components per widget, oracles in `src/expectations/`.
-7. **Run and stabilise** — `stabilize-e2e-tests`. Typecheck, lint, run the specs, fix test bugs,
-   rerun flaky specs with `--repeat-each=3`. Classify every remaining failure as test bug /
-   app defect / data limitation — never "fix" a test by weakening it to match a defect.
+   `tests/e2e-wisersite/<board>/`, components per widget, oracles in `src/expectations/`,
+   boundary rules in `tests/rules/`. Every test declares `details({ ac, title, what, variant })`;
+   empty-state-only paths call `markLimitedByData()`; known / suspected defects are labelled,
+   never `test.fail()`. `check-oracle-independence.cjs --strict` must pass.
+7. **Run and stabilise** — `stabilize-e2e-tests`. Environment check, typecheck, lint, oracle
+   and defect-label checks, `test:rules`, run the specs, fix test bugs, rerun flaky specs with
+   `--repeat-each=3`, timezone runs for date-sensitive specs. Classify every remaining failure
+   as test bug / app defect / data limitation / environment — never "fix" a test by weakening
+   it to match a defect.
+8. **Self-review** — load `qa-review-report` and run its checklist (A–E) against your own work,
+   using `ac-coverage.cjs` on a fresh `npm run test:headed:retry` JSON run. Fix every blocker
+   and major you find, rerun, and repeat **at most twice**; list what's left. You can't launch
+   the `qa-test-reviewer` agent yourself, so recommend the user runs it for an independent
+   review. Finish by building the business report (`qa-business-report`) from the last run.
 
 ## Final report (your last message — the parent session relays it)
 
-1. **Coverage table** — ticket → spec file → # tests, and per-AC status: asserted / empty-state
-   only on current data / skipped (reason) / not tested (why).
-2. **Run result** — exact pass/fail/skip/flaky counts and the command used.
-3. **Defects and discrepancies** — app behaviour that contradicts an AC (with file:line in the
-   app and the failing/expected values), plus suite bugs you fixed along the way.
-4. **Data gaps** — scenarios that can't execute until the tenant has certain data, and what
+1. **Coverage table** — from `ac-coverage.cjs`: ticket → spec file → # tests, and per-AC status:
+   asserted / empty-state-only on current data / failing (known / suspected / new) / skipped
+   (reason) / missing (why).
+2. **Run result** — exact passed / passed-limited / failed (new) / failed (known defect) /
+   failed (suspected defect) / flaky / skipped counts and the command used, plus the timezone
+   runs. Self-review: findings fixed, findings left.
+3. **Reports** — path to the business report in `reports/business/`.
+4. **Defects and discrepancies** — app behaviour that contradicts an AC (with file:line in the
+   app and the failing/expected values), split into known (KNOWN-DEFECTS ID) and suspected
+   (new rows in `docs/suspected-defects.md`), plus suite bugs you fixed along the way.
+5. **Data gaps** — scenarios that can't execute until the tenant has certain data, and what
    data would unlock them.
-5. **Files changed** — grouped by layer (specs, components, expectations, utils, docs).
+6. **Files changed** — grouped by layer (specs, components, expectations, utils, docs).

@@ -37,10 +37,10 @@ export class HiresTrendRepository {
   }
 
   /**
-   * Mirrors the app's `coerceMonth`. `pg`'s default type parser returns a `date` column as a
+   * oracle-ok: database type parsing, no ticket rule. `pg`'s default type parser returns a `date` column as a
    * JS `Date` (parsed at UTC midnight, per `pg-types`), not a string — reading `row.month` as a
    * string here would silently produce garbage keys (e.g. via `Date.prototype.toString()`) that
-   * never match a real `YYYY-MM-01`, which is exactly the bug this mirroring avoids.
+   * never match a real `YYYY-MM-01`.
    */
   private coerceMonth(value: unknown): string {
     if (value instanceof Date) {

@@ -22,17 +22,26 @@ function rankBy(
   );
 }
 
+/**
+ * WP23-156 AC 1.1.3 "% hired" and WP23-159 AC 2.4 "conversion rate": hires / applications, one
+ * decimal place + "%". A source with no applications reads "0.0%" (never shown: AC 4.3).
+ */
+export function hireRateLabel(hires: number, applications: number): string {
+  const rate = applications > 0 ? (hires / applications) * 100 : 0;
+  return `${rate.toFixed(1)}%`;
+}
+
 /** WP23-156 AC 1.1.2: the top `limit` sources by application volume. */
 export function topSourcesByApplications(rows: SourceBreakdown[], limit = 6): SourceBreakdown[] {
   return rankBy(rows, (row) => row.applications).slice(0, limit);
 }
 
-/** WP23-156: the rows Applications by Source should list — source, applications, hire rate. */
+/** WP23-156 AC 1.1.2 / 1.1.3: the rows Applications by Source lists — source, applications, hire rate. */
 export function expectedApplicationsBySourceRows(rows: SourceBreakdown[]): SourceRow[] {
   return topSourcesByApplications(rows).map((row) => ({
     source: row.sourceChannel,
     applications: row.applications,
-    rateLabel: row.hireRateLabel,
+    rateLabel: hireRateLabel(row.hires, row.applications),
   }));
 }
 
@@ -44,20 +53,22 @@ export function sourcesWithHires(rows: SourceBreakdown[]): SourceBreakdown[] {
   );
 }
 
+/** WP23-157 Func 1.2: total hires, the donut's resting centre value and share denominator. */
 export function totalHires(rows: SourceBreakdown[]): number {
   return rows.reduce((sum, row) => sum + row.hires, 0);
 }
 
 /**
- * WP23-157 "% of source total" (source hires / total hires): one decimal place with a trailing
- * ".0" dropped, and never a bare "0%" for a share that is really there.
+ * WP23-157 Func 1.2.2 "% of source total" (source hires / total hires). AC silent on rounding:
+ * per app `DonutGraph` one decimal place with a trailing ".0" dropped, and never a bare "0%" for
+ * a share that is really there.
  */
 export function hireShareLabel(hires: number, total: number): string {
   const share = (hires / total) * 100;
   return share > 0 && share < 0.1 ? '<0.1%' : `${Number(share.toFixed(1))}%`;
 }
 
-/** WP23-157: the donut's segments, as its accessible table lists them. */
+/** WP23-157 AC 1.2: the donut's segments, as its accessible table lists them. */
 export function expectedHireDistributionSegments(
   rows: SourceBreakdown[],
 ): HireDistributionSegment[] {
@@ -88,11 +99,14 @@ export function expectedSourcePerformanceRows(rows: SourceBreakdown[]): SourceRo
     applications: row.applications,
     screened: row.screened,
     hires: row.hires,
-    rateLabel: row.hireRateLabel,
+    rateLabel: hireRateLabel(row.hires, row.applications),
   }));
 }
 
-/** Rows keyed by source, so comparisons don't depend on how equal values happened to order. */
+/**
+ * Rows keyed by source, so comparisons don't depend on how equal values happened to order.
+ * oracle-ok: comparison helper, encodes no ticket rule.
+ */
 export function rowsBySource(rows: SourceRow[]): Record<string, SourceRow> {
   return Object.fromEntries(rows.map((row) => [row.source, row]));
 }

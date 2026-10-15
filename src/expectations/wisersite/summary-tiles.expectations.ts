@@ -1,4 +1,7 @@
-import type { SourceToHireSummary } from '../../db/repositories/wisersite/source-to-hire.repository.types';
+import type {
+  DataSpan,
+  SourceToHireSummary,
+} from '../../db/repositories/wisersite/source-to-hire.repository.types';
 import type { DateWindow, SummaryTileReading } from '../../types/wisersite/source-to-hire.types';
 import { formatLocaleCount } from '../../utils/format/locale-number';
 
@@ -13,8 +16,9 @@ import { formatLocaleCount } from '../../utils/format/locale-number';
  * | Total Hires         | higher = better     | < 0%     | 0–10%      | > 10%    |
  * | Average Hire Period | lower = better      | > 5%     | -5% to +5% | < -5%    |
  *
- * plus AC 5: no comparison when the previous window is not fully inside the tenant's data
- * range, and "no change" reads as `0%` in the neutral band.
+ * plus AC 5: no comparison unless both the selected window and the one before it are fully
+ * inside the tenant's data (first to last application in the warehouse), and "no change"
+ * reads as `0%` in the neutral band.
  */
 
 export type TrendState = 'positive' | 'negative' | 'neutral' | 'falsePositive' | 'falseNegative';
@@ -84,6 +88,7 @@ function pctChange(current: number, previous: number): number | null {
   return ((current - previous) / previous) * 100;
 }
 
+/** WP23-87 AC 3.1: the colour band for a % change, per the rule table above. */
 export function trendStateFor(pct: number | null, higherIsBetter: boolean): TrendState {
   if (pct == null) return 'neutral';
   if (higherIsBetter) {
@@ -96,26 +101,55 @@ export function trendStateFor(pct: number | null, higherIsBetter: boolean): Tren
   return 'neutral';
 }
 
-/**
- * AC 5.1/5.2: a comparison is only meaningful when the whole previous window sits inside the
- * tenant's available data range `[minDate, maxDate]`.
- */
-export function isComparisonAvailable(
-  previous: DateWindow,
-  dataRange: { minDate?: string; maxDate?: string },
-): boolean {
-  const { minDate, maxDate } = dataRange;
+function insideRange(window: DateWindow, minDate?: string, maxDate?: string): boolean {
   if (!minDate || !maxDate || minDate > maxDate) return false;
-  return previous.startDate >= minDate && previous.endDate <= maxDate;
+  return window.startDate >= minDate && window.endDate <= maxDate;
 }
 
+/**
+ * AC 5.1: a selected window that is totally or partially outside the available data shows no
+ * comparison. AC 5.2: data for the selected window but not for the one before it shows the
+ * headline only. So a comparison needs both windows inside `span` (`getDataSpan()`, from the
+ * warehouse, never from the app's request).
+ */
+export function isComparisonAvailable(
+  current: DateWindow,
+  previous: DateWindow,
+  span: DataSpan | null,
+): boolean {
+  return (
+    insideRange(current, span?.minDate, span?.maxDate) &&
+    insideRange(previous, span?.minDate, span?.maxDate)
+  );
+}
+
+/**
+ * Whether known defect WP23-213 D-1 changes the outcome for this window. The app shows a
+ * comparison when the previous window is inside the `minDate`/`maxDate` it sends, and on this
+ * environment those are a today−90 fallback, not the data. Used only to label the failure as
+ * a known defect; the expected values always come from `isComparisonAvailable`.
+ */
+export function comparisonGateDefectApplies(
+  current: DateWindow,
+  previous: DateWindow,
+  span: DataSpan | null,
+  boardRange: { minDate?: string; maxDate?: string },
+): boolean {
+  const appShowsComparison = insideRange(previous, boardRange.minDate, boardRange.maxDate);
+  return appShowsComparison !== isComparisonAvailable(current, previous, span);
+}
+
+/**
+ * WP23-87 AC 1–3 and AC 5: the four tiles' value, delta, caption and colour. AC silent on
+ * rounding: per app `KpiTile` whole-number % and whole days.
+ */
 export function expectedSummaryTiles({
   current,
   previous,
   comparisonPreset,
 }: {
   current: SourceToHireSummary;
-  /** `null` when the previous window is outside the tenant's data range. */
+  /** `null` when AC 5 says there is no comparison (`isComparisonAvailable`). */
   previous: SourceToHireSummary | null;
   comparisonPreset: ComparisonPreset;
 }): ExpectedTile[] {
@@ -143,8 +177,8 @@ export function expectedSummaryTiles({
 }
 
 /**
- * The same expectation in the shape `SummaryKpiRow.readTiles()` returns: the trend state
- * becomes the sparkline's accessible name and, when there is a delta, the badge's tone.
+ * WP23-87 AC 3.1 / 3.2: the same expectation in the shape `SummaryKpiRow.readTiles()` returns:
+ * the trend state becomes the sparkline's accessible name and, with a delta, the badge's tone.
  */
 export function expectedSummaryTileReadings(
   args: Parameters<typeof expectedSummaryTiles>[0],
@@ -159,7 +193,7 @@ export function expectedSummaryTileReadings(
   }));
 }
 
-/** The headline text a tile shows for an average hire period (`null` -> "—"). */
+/** WP23-87 AC 1.4: the headline text for an average hire period (`null` -> "—"). */
 export function formatHirePeriod(days: number | null): string {
   return formatValue('avgHirePeriod', days);
 }
