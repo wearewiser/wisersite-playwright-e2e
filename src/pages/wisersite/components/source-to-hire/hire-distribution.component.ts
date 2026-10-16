@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { WIDGET_HEADINGS } from '../../../../constants/wisersite/source-to-hire.constants';
 import type { HireDistributionSegment } from '../../../../types/wisersite/source-to-hire.types';
+import { ownHitPoint } from '../../../../utils/dom/hit-point';
 import { parseLocaleCount } from '../../../../utils/format/locale-number';
 import { snapshotTableBodyRows } from '../../../../utils/playwright/table-snapshot';
 
@@ -66,12 +67,14 @@ export class HireDistributionWidget {
   }
 
   /**
-   * Hovers one segment. An arc's bounding-box centre often lands in the ring's hole or on a
-   * neighbour, so a real mouse move can't target it reliably; React's `onPointerEnter` is
-   * driven by a bubbling `pointerover`, which is what this dispatches on the arc itself.
+   * Moves the real mouse onto one segment. An arc's bounding-box centre often lands in the
+   * ring's hole or on a neighbour, so it aims at a point where the arc itself is on top.
    */
   async hoverSegment(index: number): Promise<void> {
-    await this.segments.nth(index).dispatchEvent('pointerover');
+    await this.segments.nth(index).scrollIntoViewIfNeeded();
+    const position = await ownHitPoint(this.segments.nth(index));
+    if (!position) throw new Error(`Hire Distribution segment ${index} has no hoverable point`);
+    await this.segments.nth(index).hover({ position });
   }
 
   async readCentreReadout(): Promise<{ value: string; caption: string }> {

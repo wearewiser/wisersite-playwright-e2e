@@ -1,10 +1,15 @@
+import { GLOBAL_PRESETS } from '../../constants/wisersite/source-to-hire.constants';
+import type { SourceToHireRepository } from '../../db/repositories/wisersite/source-to-hire.repository';
 import type { SourceBreakdown } from '../../db/repositories/wisersite/source-to-hire.repository.types';
 import type {
+  DateWindow,
+  GlobalPresetLabel,
   HireDistributionSegment,
   SourcePerformanceColumn,
   SourceRow,
 } from '../../types/wisersite/source-to-hire.types';
 import { formatLocaleCount } from '../../utils/format/locale-number';
+import { monthOf, nthMonthDate, resolveGlobalPreset } from '../../utils/wisersite/date-window';
 
 /**
  * Expectations for the three widgets built on the per-source breakdown — Applications by Source
@@ -51,6 +56,23 @@ export function sourcesWithHires(rows: SourceBreakdown[]): SourceBreakdown[] {
     rows.filter((row) => row.hires > 0),
     (row) => row.hires,
   );
+}
+
+/**
+ * WP23-157 AC 1.1 / AC 2: the widest global preset whose window has any hires in the warehouse,
+ * with that window and its sources with hires (`sourcesWithHires`); `null` when none has any.
+ */
+export async function widestPresetWithHires(
+  repository: Pick<SourceToHireRepository, 'getBySource'>,
+): Promise<{ preset: GlobalPresetLabel; window: DateWindow; withHires: SourceBreakdown[] } | null> {
+  for (const preset of [...GLOBAL_PRESETS].reverse()) {
+    const window = resolveGlobalPreset(preset);
+    const withHires = sourcesWithHires(
+      await repository.getBySource(window.startDate, window.endDate),
+    );
+    if (withHires.length > 0) return { preset, window, withHires };
+  }
+  return null;
 }
 
 /** WP23-157 Func 1.2: total hires, the donut's resting centre value and share denominator. */
@@ -122,3 +144,26 @@ export const SOURCE_PERFORMANCE_SORT_VALUE: Record<
   'Total hires': (row) => row.hires ?? 0,
   'Conversion rate': (row) => Number.parseFloat(row.rateLabel),
 };
+
+const MONTH_PRESET_LENGTH: Partial<Record<GlobalPresetLabel, number>> = {
+  'Last 3 months': 3,
+  'Last 6 months': 6,
+  'Last 12 months': 12,
+};
+
+/**
+ * Whether the window the widget asked for is exactly suspected defect QA-WP23-62-1 (WP23-159
+ * AC 1, docs/test-plans D-3): a "Last N months" option that ends on the expected day but starts
+ * on the 1st of the month N−1 months back instead of on the global preset's start. Used only to
+ * label the failure; any other mismatch (another end date, or "Last 30 days") isn't this defect.
+ */
+export function widgetMonthPresetDefectApplies(
+  preset: GlobalPresetLabel,
+  expected: DateWindow,
+  requested: { startDate?: string; endDate?: string } | undefined,
+): boolean {
+  const months = MONTH_PRESET_LENGTH[preset];
+  if (!months || requested?.endDate !== expected.endDate) return false;
+  const calendarMonthStart = nthMonthDate(monthOf(expected.endDate), -(months - 1));
+  return requested.startDate === calendarMonthStart && calendarMonthStart !== expected.startDate;
+}

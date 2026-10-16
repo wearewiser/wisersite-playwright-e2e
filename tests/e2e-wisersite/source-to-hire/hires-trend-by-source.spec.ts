@@ -137,18 +137,30 @@ test.describe('WP23-158 Hires Trend by Source', () => {
     }),
     async ({ sourceToHirePage, widgetRequests }) => {
       await sourceToHirePage.summary.waitForLoaded();
+      const beforeGlobalChange = widgetRequests.mark();
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
       const globalRange = await sourceToHirePage.dateRange.getActiveRange();
+      // Let the global change finish re-fetching, so only what the widget change triggers is left.
+      await widgetRequests.waitForQuiet(beforeGlobalChange);
       const tilesBefore = await sourceToHirePage.summary.readTiles();
-      const summaryRequestBefore = widgetRequests.last('sourceToHireSummary');
+      const mark = widgetRequests.mark();
 
-      await sourceToHirePage.hiresTrend.setTimePeriod('last-30-days');
-      await sourceToHirePage.hiresTrend.setComparison('3-months');
+      const { hiresTrend } = sourceToHirePage;
+      await hiresTrend.setTimePeriod('last-30-days');
+      await hiresTrend.setComparison('3-months');
+      await expect(hiresTrend.timePeriodSelect).toHaveValue('last-30-days');
+      await expect(hiresTrend.comparisonSelect).toHaveValue('3-months');
+      // Give any (wrong) refetch the change sets off time to start and finish before checking.
+      await widgetRequests.waitForQuiet(mark);
 
+      // The chart reshapes the data it already has; no other widget may fetch again.
+      expect(
+        widgetRequests.keysSince(mark).filter((key) => key !== 'hiresTrendBySource'),
+        'widgets that re-fetched after only the Hires Trend period changed',
+      ).toEqual([]);
       expect(await sourceToHirePage.dateRange.getActiveRange()).toEqual(globalRange);
       await expect(sourceToHirePage.sourcePerformance.timePeriodSelect).toHaveValue('match-global');
       expect(await sourceToHirePage.summary.readTiles()).toEqual(tilesBefore);
-      expect(widgetRequests.last('sourceToHireSummary')).toEqual(summaryRequestBefore);
     },
   );
 

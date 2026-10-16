@@ -33,25 +33,28 @@ export class AdminSidebar {
   }
 
   /**
-   * Expands a nav group if it's collapsed. The toggle is named "<label>" when the group has
-   * no landing page, or "Expand/Collapse <label>" (beside a "<label>" link) when it does — the
-   * pattern matches exactly one button in either case.
+   * Expands a nav group if `linkLabel` isn't showing, the way a user would: click the group's
+   * toggle and wait for the link to appear. A collapsed group removes its links, so the link
+   * itself is the signal — no class names or stored state. The toggle is named "<label>" when
+   * the group has no landing page, or "Expand <label>" (beside a "<label>" link) when it does.
    */
-  async expandGroup(label: string): Promise<void> {
-    const group = this.group(label);
-    const collapsed = /\bnav-group--collapsed\b/;
-    if (collapsed.test((await group.getAttribute('class')) ?? '')) {
-      await group
-        .getByRole('button', { name: new RegExp(`^((Expand|Collapse) )?${label}$`) })
-        .click();
-      await expect(group).not.toHaveClass(collapsed);
-    }
+  async expandGroup(label: string, linkLabel: string): Promise<void> {
+    const link = this.groupLink(label, linkLabel);
+    if (await link.isVisible()) return;
+    await this.group(label)
+      .getByRole('button', { name: new RegExp(`^(Expand )?${label}$`) })
+      .click();
+    await expect(link).toBeVisible();
   }
 
   /** Opens the rail, expands `groupLabel`, and clicks its `linkLabel` entry. */
   async navigateTo(groupLabel: string, linkLabel: string): Promise<void> {
     await this.open();
-    await this.expandGroup(groupLabel);
-    await this.group(groupLabel).getByRole('link', { name: linkLabel, exact: true }).click();
+    await this.expandGroup(groupLabel, linkLabel);
+    await this.groupLink(groupLabel, linkLabel).click();
+  }
+
+  private groupLink(groupLabel: string, linkLabel: string): Locator {
+    return this.group(groupLabel).getByRole('link', { name: linkLabel, exact: true });
   }
 }

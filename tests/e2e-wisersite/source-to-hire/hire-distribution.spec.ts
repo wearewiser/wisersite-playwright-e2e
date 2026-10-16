@@ -1,17 +1,15 @@
 import { expect, test } from '../../../src/fixtures/wisersite.fixtures';
-import type { SourceToHireRepository } from '../../../src/db/repositories/wisersite/source-to-hire.repository';
-import type { SourceBreakdown } from '../../../src/db/repositories/wisersite/source-to-hire.repository.types';
 import {
   GLOBAL_PRESETS,
   WIDGET_TIMEOUT_MS,
 } from '../../../src/constants/wisersite/source-to-hire.constants';
 import {
+  expectedApplicationsBySourceRows,
   expectedHireDistributionReadout,
   expectedHireDistributionSegments,
-  sourcesWithHires,
   totalHires,
+  widestPresetWithHires,
 } from '../../../src/expectations/wisersite/source-breakdown.expectations';
-import type { SourceToHirePage } from '../../../src/pages/wisersite/source-to-hire.page';
 import { colourToken } from '../../../src/utils/dom/css';
 import { formatLocaleCount } from '../../../src/utils/format/locale-number';
 import { details, markLimitedByData } from '../../../src/utils/playwright/test-annotations';
@@ -25,23 +23,6 @@ import { details, markLimitedByData } from '../../../src/utils/playwright/test-a
  * centre readout becomes "total from source", "% of total hires · source name"; 3 no data for
  * the period -> the widget is not displayed.
  */
-
-/** Applies the widest global preset that has any hires per Postgres; `[]` when none does. */
-async function selectPresetWithHires(
-  sourceToHirePage: SourceToHirePage,
-  sourceToHireRepository: SourceToHireRepository,
-): Promise<SourceBreakdown[]> {
-  await sourceToHirePage.summary.waitForLoaded();
-  for (const preset of [...GLOBAL_PRESETS].reverse()) {
-    await sourceToHirePage.selectGlobalDatePreset(preset);
-    const { startDate, endDate } = await sourceToHirePage.dateRange.getActiveRange();
-    const withHires = sourcesWithHires(
-      await sourceToHireRepository.getBySource(startDate, endDate),
-    );
-    if (withHires.length > 0) return withHires;
-  }
-  return [];
-}
 
 test.describe('WP23-157 Hire Distribution', () => {
   for (const preset of GLOBAL_PRESETS) {
@@ -97,11 +78,12 @@ test.describe('WP23-157 Hire Distribution', () => {
     }),
     async ({ sourceToHirePage, sourceToHireRepository }) => {
       const widget = sourceToHirePage.hireDistribution;
-      const withHires = await selectPresetWithHires(sourceToHirePage, sourceToHireRepository);
-      test.skip(
-        withHires.length === 0,
-        'No global preset has any hires in Postgres — the donut never renders.',
-      );
+      await sourceToHirePage.summary.waitForLoaded();
+      const found = await widestPresetWithHires(sourceToHireRepository);
+      test.skip(!found, 'No global preset has any hires in Postgres — the donut never renders.');
+      await sourceToHirePage.selectGlobalDatePreset(found!.preset);
+      expect(await sourceToHirePage.dateRange.getActiveRange()).toEqual(found!.window);
+      const { withHires } = found!;
 
       await expect(widget.heading).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
       const total = totalHires(withHires);
@@ -122,14 +104,27 @@ test.describe('WP23-157 Hire Distribution', () => {
     }),
     async ({ sourceToHirePage, sourceToHireRepository }) => {
       const { hireDistribution, applicationsBySource } = sourceToHirePage;
-      const withHires = await selectPresetWithHires(sourceToHirePage, sourceToHireRepository);
-      test.skip(
-        withHires.length === 0,
-        'No global preset has any hires in Postgres — the donut never renders.',
-      );
+      await sourceToHirePage.summary.waitForLoaded();
+      const found = await widestPresetWithHires(sourceToHireRepository);
+      test.skip(!found, 'No global preset has any hires in Postgres — the donut never renders.');
+      await sourceToHirePage.selectGlobalDatePreset(found!.preset);
+      expect(await sourceToHirePage.dateRange.getActiveRange()).toEqual(found!.window);
 
       await expect(hireDistribution.heading).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
-      await applicationsBySource.waitForRows();
+      // Wait for both widgets to show this preset's data, not the previous preset's.
+      const bySource = await sourceToHireRepository.getBySource(
+        found!.window.startDate,
+        found!.window.endDate,
+      );
+      await expect
+        .poll(() => hireDistribution.readSegments(), { timeout: WIDGET_TIMEOUT_MS })
+        .toEqual(expectedHireDistributionSegments(bySource));
+      // Counts in order, not names: a tie at the 6th place may break either way (ticket silent).
+      await expect
+        .poll(async () => (await applicationsBySource.readRows()).map((row) => row.applications), {
+          timeout: WIDGET_TIMEOUT_MS,
+        })
+        .toEqual(expectedApplicationsBySourceRows(bySource).map((row) => row.applications));
 
       const donutColours = await hireDistribution.readLegendColours();
       // Both bar shades are mixed from the source's one base colour token.

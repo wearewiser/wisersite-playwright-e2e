@@ -8,8 +8,10 @@ import {
 } from '../../../src/constants/wisersite/source-to-hire.constants';
 import {
   SOURCE_PERFORMANCE_SORT_VALUE,
+  expectedApplicationsBySourceRows,
   expectedSourcePerformanceRows,
   rowsBySource,
+  widgetMonthPresetDefectApplies,
 } from '../../../src/expectations/wisersite/source-breakdown.expectations';
 import {
   expectedHiresTrendTable,
@@ -132,11 +134,14 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
         await sourceToHirePage.summary.waitForLoaded();
         await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
         const { startDate, endDate } = await sourceToHirePage.dateRange.getActiveRange();
-        test.skip(
-          (await sourceToHireRepository.getBySource(startDate, endDate)).length < 2,
-          'Fewer than two sources — nothing to sort.',
+        const expected = expectedSourcePerformanceRows(
+          await sourceToHireRepository.getBySource(startDate, endDate),
         );
-        await widget.waitForRows();
+        test.skip(expected.length < 2, 'Fewer than two sources — nothing to sort.');
+        // Wait for the 12-month rows: the previous preset's rows stay on screen until they arrive.
+        await expect
+          .poll(async () => rowsBySource(await widget.readRows()), { timeout: WIDGET_TIMEOUT_MS })
+          .toEqual(rowsBySource(expected));
         const before = await widget.readRows();
         if (new Set(before.map(sortValue)).size === 1) {
           markLimitedByData(`Every row has the same "${column}", so the sort order can't be seen.`);
@@ -200,16 +205,16 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
 
         await widget.setTimePeriod(value);
 
-        // The widget asked the server for exactly the window the ticket describes. If not, and
-        // the start date is what differs, that is suspected defect QA-WP23-62-1: label and rethrow.
+        // The widget asked the server for exactly the window the ticket describes. If it asked
+        // for the calendar-month window instead, that is suspected defect QA-WP23-62-1: label and
+        // rethrow. Any other mismatch fails unlabelled.
         try {
           await expect
             .poll(() => widgetRequests.last('sourcePerformanceBreakdown'))
             .toEqual(localWindow);
         } catch (error) {
-          if (
-            widgetRequests.last('sourcePerformanceBreakdown')?.startDate !== localWindow.startDate
-          ) {
+          const requested = widgetRequests.last('sourcePerformanceBreakdown');
+          if (widgetMonthPresetDefectApplies(preset, localWindow, requested)) {
             markSuspectedDefect(SUSPECTED_DEFECTS.widgetMonthPresets);
           }
           throw error;
@@ -282,12 +287,21 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
       await sourceToHirePage.summary.waitForLoaded();
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
       const { startDate, endDate } = await sourceToHirePage.dateRange.getActiveRange();
-      test.skip(
-        (await sourceToHireRepository.getBySource(startDate, endDate)).length === 0,
-        'No applications in the last 12 months.',
-      );
-      await sourcePerformance.waitForRows();
-      await applicationsBySource.waitForRows();
+      const bySource = await sourceToHireRepository.getBySource(startDate, endDate);
+      test.skip(bySource.length === 0, 'No applications in the last 12 months.');
+      // Wait for both widgets to show the 12-month data: the previous preset's rows stay on
+      // screen until the new ones arrive.
+      await expect
+        .poll(async () => rowsBySource(await sourcePerformance.readRows()), {
+          timeout: WIDGET_TIMEOUT_MS,
+        })
+        .toEqual(rowsBySource(expectedSourcePerformanceRows(bySource)));
+      // Counts in order, not names: a tie at the 6th place may break either way (ticket silent).
+      await expect
+        .poll(async () => (await applicationsBySource.readRows()).map((row) => row.applications), {
+          timeout: WIDGET_TIMEOUT_MS,
+        })
+        .toEqual(expectedApplicationsBySourceRows(bySource).map((row) => row.applications));
 
       const table = await sourcePerformance.readRows();
       const top6 = await applicationsBySource.readRows();
@@ -311,7 +325,7 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
       ac: ['WP23-159 AC 4.1'],
       title: 'The top six rows match the sources shown in Hires Trend',
     }),
-    async ({ sourceToHirePage, hiresTrendRepository }) => {
+    async ({ sourceToHirePage, hiresTrendRepository, sourceToHireRepository }) => {
       const { sourcePerformance, hiresTrend } = sourceToHirePage;
       await sourceToHirePage.summary.waitForLoaded();
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
@@ -329,7 +343,19 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
         'No hires in the last 12 months, so Hires Trend by Source plots no sources to match against.',
       );
 
-      await sourcePerformance.waitForRows();
+      // Wait for both widgets to show the 12-month data, not the previous preset's.
+      const { startDate, endDate } = await sourceToHirePage.dateRange.getActiveRange();
+      await expect
+        .poll(async () => rowsBySource(await sourcePerformance.readRows()), {
+          timeout: WIDGET_TIMEOUT_MS,
+        })
+        .toEqual(
+          rowsBySource(
+            expectedSourcePerformanceRows(
+              await sourceToHireRepository.getBySource(startDate, endDate),
+            ),
+          ),
+        );
       await expect
         .poll(() => hiresTrend.readTable(), { timeout: WIDGET_TIMEOUT_MS })
         .toEqual(expectedTrend);

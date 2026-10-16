@@ -7,7 +7,7 @@ the app's own API says they agree.
 
 ## Scope
 
-- **UI**: `http://localhost:3000/admin` — the target app (`D:\Repositories\wiser-projects\wisersite-and-payload-plugin`)
+- **UI**: `http://localhost:3000/admin` — the target app (`../wisersite-and-payload-plugin`, next to this repo)
   must already be running there (`pnpm dev` in that repo). This suite does not start it.
 - **Data verification**: Postgres only, against the tenant analytics warehouse
   (`analytics.gold_*` tables, reached via `TENANT_SQL_*`). The plugin's primary content DB
@@ -63,7 +63,7 @@ npx playwright install    # downloads browser binaries
 Make sure `wisersite-and-payload-plugin`'s dev server is running first:
 
 ```bash
-cd D:\Repositories\wiser-projects\wisersite-and-payload-plugin
+cd ../wisersite-and-payload-plugin
 pnpm dev
 ```
 

@@ -1,9 +1,11 @@
+import type { SourceToHireRepository } from '../../db/repositories/wisersite/source-to-hire.repository';
 import type {
   DataSpan,
   SourceToHireSummary,
 } from '../../db/repositories/wisersite/source-to-hire.repository.types';
 import type { DateWindow, SummaryTileReading } from '../../types/wisersite/source-to-hire.types';
 import { formatLocaleCount } from '../../utils/format/locale-number';
+import { previousWindow } from '../../utils/wisersite/date-window';
 
 /**
  * Independent oracle for what each Source to Hire summary tile should show (WP23-87), built
@@ -191,6 +193,34 @@ export function expectedSummaryTileReadings(
     sparklineLabel: SPARKLINE_LABEL[tile.trendState],
     tone: tile.delta ? TREND_TONE[tile.trendState] : null,
   }));
+}
+
+/**
+ * WP23-87 AC 1–3 and AC 5 for one window, from the warehouse: the four tiles the board should
+ * show, whether AC 5 allows a comparison, and the previous window and data span that decided it
+ * (the inputs `comparisonGateDefectApplies` needs to label WP23-213 D-1).
+ */
+export async function expectedSummaryForWindow(
+  repository: Pick<SourceToHireRepository, 'getSummary' | 'getDataSpan'>,
+  window: DateWindow,
+  comparisonPreset: ComparisonPreset,
+): Promise<{
+  expected: SummaryTileReading[];
+  comparisonAvailable: boolean;
+  previous: DateWindow;
+  span: DataSpan | null;
+}> {
+  const span = await repository.getDataSpan();
+  const previous = previousWindow(window);
+  const comparisonAvailable = isComparisonAvailable(window, previous, span);
+  const expected = expectedSummaryTileReadings({
+    current: await repository.getSummary(window.startDate, window.endDate),
+    previous: comparisonAvailable
+      ? await repository.getSummary(previous.startDate, previous.endDate)
+      : null,
+    comparisonPreset,
+  });
+  return { expected, comparisonAvailable, previous, span };
 }
 
 /** WP23-87 AC 1.4: the headline text for an average hire period (`null` -> "—"). */

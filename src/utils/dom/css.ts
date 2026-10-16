@@ -1,3 +1,5 @@
+import type { Locator } from '@playwright/test';
+
 /** Reads one CSS custom property out of an inline `style` attribute (`--bar-width` -> `"40%"`). */
 export function readCssVariable(style: string, name: string): string | null {
   const match = new RegExp(`${name}:\\s*([^;]+)`).exec(style);
@@ -10,11 +12,29 @@ export function colourToken(colour: string | null | undefined): string | null {
 }
 
 /**
- * Finds which of `names` appears as a modifier in a (possibly CSS-module-hashed) class list —
- * `"Pill-module__x1__pill Pill-module__x1__positive"` with `['positive', 'negative']` ->
- * `"positive"`.
+ * Which of `tokens` (name -> CSS custom property, e.g. `{ positive: '--tone-positive' }`) the
+ * element's rendered text colour resolves to — the colour the user sees, not a class name.
+ * Each token is resolved in the element's own scope; an undefined token never matches.
  */
-export function classModifier<T extends string>(classList: string, names: readonly T[]): T | null {
-  const pattern = new RegExp(`(?:^|[_\\s-])(${names.join('|')})(?=\\s|$)`);
-  return (pattern.exec(classList)?.[1] as T | undefined) ?? null;
+export async function matchTextColourToken<T extends string>(
+  element: Locator,
+  tokens: Readonly<Record<T, string>>,
+): Promise<T | null> {
+  const match = await element.evaluate(
+    (el, entries) => {
+      const scope = el.parentElement ?? el;
+      const resolve = (property: string): string => {
+        const probe = document.createElement('span');
+        probe.style.color = `var(${property}, transparent)`;
+        scope.appendChild(probe);
+        const colour = getComputedStyle(probe).color;
+        probe.remove();
+        return colour;
+      };
+      const actual = getComputedStyle(el).color;
+      return entries.find(([, property]) => resolve(property) === actual)?.[0] ?? null;
+    },
+    Object.entries(tokens) as [string, string][],
+  );
+  return match as T | null;
 }

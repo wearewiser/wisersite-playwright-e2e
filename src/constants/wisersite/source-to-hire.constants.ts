@@ -72,3 +72,13 @@ export const WIDGET_TIMEOUT_MS = 15_000;
 
 /** Next.js dev mode compiles a route on its first hit — far slower than a normal load. */
 export const FIRST_LOAD_TIMEOUT_MS = 45_000;
+
+/**
+ * The summary delta badge's tone, by the theme colour its text is painted in (the app's
+ * `--tone-*` tokens). Read from the rendered colour, never from CSS-module class names.
+ */
+export const BADGE_TONE_COLOUR_TOKENS = {
+  positive: '--tone-positive',
+  negative: '--tone-negative',
+  neutral: '--tone-neutral',
+} as const;

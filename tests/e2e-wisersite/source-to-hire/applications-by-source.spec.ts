@@ -78,7 +78,13 @@ test.describe('WP23-156 Applications by Source', () => {
       );
       test.skip(expected.length === 0, 'No applications in the last 12 months to draw bars for.');
 
-      await widget.waitForRows();
+      // Wait for the 12-month rows: the previous preset's rows stay on screen until they arrive.
+      // Counts in order, not names: a tie at the 6th place may break either way (ticket silent).
+      await expect
+        .poll(async () => (await widget.readRows()).map((row) => row.applications), {
+          timeout: WIDGET_TIMEOUT_MS,
+        })
+        .toEqual(expected.map((row) => row.applications));
       await expect(widget.subtitle).toBeVisible();
       await expect(widget.legendItems).toHaveText(['Applications', 'Screens']);
       // There is no per-widget period picker — it only ever follows the global date filter.

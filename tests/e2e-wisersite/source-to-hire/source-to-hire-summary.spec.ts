@@ -1,5 +1,4 @@
 import { expect, test } from '../../../src/fixtures/wisersite.fixtures';
-import type { SourceToHireRepository } from '../../../src/db/repositories/wisersite/source-to-hire.repository';
 import {
   GLOBAL_PRESETS,
   SUMMARY_TILE_LABELS,
@@ -10,14 +9,11 @@ import {
   SPARKLINE_LABEL,
   TREND_TONE,
   comparisonGateDefectApplies,
-  expectedSummaryTileReadings,
+  expectedSummaryForWindow,
   formatHirePeriod,
-  isComparisonAvailable,
   trendStateFor,
-  type ComparisonPreset,
   type TrendState,
 } from '../../../src/expectations/wisersite/summary-tiles.expectations';
-import type { WidgetRequestTracker } from '../../../src/network/wisersite/widget-request-tracker';
 import { SourceToHirePage } from '../../../src/pages/wisersite/source-to-hire.page';
 import { formatLocaleCount } from '../../../src/utils/format/locale-number';
 import {
@@ -50,49 +46,6 @@ import {
  * own gate (today−90 fallback range) gives a different answer, the test fails and is labelled
  * `known-defect: WP23-213 D-1`.
  */
-
-/**
- * Checks all four tiles against the warehouse for the board's current window, and against the
- * previous window when AC 5 allows a comparison.
- */
-async function expectTilesToMatchWarehouse(
-  sourceToHirePage: SourceToHirePage,
-  widgetRequests: WidgetRequestTracker,
-  sourceToHireRepository: SourceToHireRepository,
-  comparisonPreset: ComparisonPreset,
-): Promise<{ comparisonAvailable: boolean }> {
-  const window = await sourceToHirePage.dateRange.getActiveRange();
-  // oracle-ok: the board's bounds only decide the WP23-213 D-1 label, never an expected value.
-  const { minDate, maxDate } = await widgetRequests.waitForLast('sourceToHireSummary');
-  const span = await sourceToHireRepository.getDataSpan();
-  const previous = previousWindow(window);
-  const comparisonAvailable = isComparisonAvailable(window, previous, span);
-  if (comparisonGateDefectApplies(window, previous, span, { minDate, maxDate })) {
-    markKnownDefect(KNOWN_DEFECTS.comparisonGate);
-  }
-
-  const expected = expectedSummaryTileReadings({
-    current: await sourceToHireRepository.getSummary(window.startDate, window.endDate),
-    previous: comparisonAvailable
-      ? await sourceToHireRepository.getSummary(previous.startDate, previous.endDate)
-      : null,
-    comparisonPreset,
-  });
-  console.log(
-    'Summary tiles %o, previous %o, warehouse data %o, board range %o, comparable: %s',
-    window,
-    previous,
-    span,
-    { minDate, maxDate },
-    comparisonAvailable,
-  );
-  console.log('  SQL-derived (expected):', expected);
-
-  await expect
-    .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
-    .toEqual(expected);
-  return { comparisonAvailable };
-}
 
 test.describe('WP23-87 Source to Hire summary statistics', () => {
   test(
@@ -179,12 +132,21 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
           resolveGlobalPreset(preset),
         );
 
-        await expectTilesToMatchWarehouse(
-          sourceToHirePage,
-          widgetRequests,
-          sourceToHireRepository,
-          preset,
-        );
+        const activeRange = await sourceToHirePage.dateRange.getActiveRange();
+        const {
+          expected,
+          previous,
+          span: dataSpan,
+        } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, preset);
+        // oracle-ok: the board's bounds only decide the WP23-213 D-1 label, never an expected value.
+        const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
+        if (comparisonGateDefectApplies(activeRange, previous, dataSpan, boardRange)) {
+          markKnownDefect(KNOWN_DEFECTS.comparisonGate);
+        }
+        console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
+        await expect
+          .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
+          .toEqual(expected);
       },
     );
   }
@@ -212,12 +174,22 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
       await sourceToHirePage.setCustomGlobalDateRange(startDate, endDate);
       expect(await sourceToHirePage.dateRange.getActiveRange()).toEqual({ startDate, endDate });
 
-      const { comparisonAvailable } = await expectTilesToMatchWarehouse(
-        sourceToHirePage,
-        widgetRequests,
-        sourceToHireRepository,
-        'custom',
-      );
+      const activeRange = await sourceToHirePage.dateRange.getActiveRange();
+      const {
+        expected,
+        comparisonAvailable,
+        previous,
+        span: dataSpan,
+      } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, 'custom');
+      // oracle-ok: the board's bounds only decide the WP23-213 D-1 label, never an expected value.
+      const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
+      if (comparisonGateDefectApplies(activeRange, previous, dataSpan, boardRange)) {
+        markKnownDefect(KNOWN_DEFECTS.comparisonGate);
+      }
+      console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
+      await expect
+        .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
+        .toEqual(expected);
       expect(comparisonAvailable).toBe(true);
     },
   );
@@ -243,12 +215,22 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
       );
       await sourceToHirePage.setCustomGlobalDateRange(startDate, endDate);
 
-      const { comparisonAvailable } = await expectTilesToMatchWarehouse(
-        sourceToHirePage,
-        widgetRequests,
-        sourceToHireRepository,
-        'custom',
-      );
+      const activeRange = await sourceToHirePage.dateRange.getActiveRange();
+      const {
+        expected,
+        comparisonAvailable,
+        previous,
+        span: dataSpan,
+      } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, 'custom');
+      // oracle-ok: the board's bounds only decide the WP23-213 D-1 label, never an expected value.
+      const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
+      if (comparisonGateDefectApplies(activeRange, previous, dataSpan, boardRange)) {
+        markKnownDefect(KNOWN_DEFECTS.comparisonGate);
+      }
+      console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
+      await expect
+        .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
+        .toEqual(expected);
       expect(comparisonAvailable).toBe(false);
       for (const tile of await sourceToHirePage.summary.readTiles()) {
         expect(tile.delta, `${tile.label} should show no comparison`).toBeNull();
@@ -280,12 +262,22 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
       );
       await sourceToHirePage.setCustomGlobalDateRange(startDate, endDate);
 
-      const { comparisonAvailable } = await expectTilesToMatchWarehouse(
-        sourceToHirePage,
-        widgetRequests,
-        sourceToHireRepository,
-        'custom',
-      );
+      const activeRange = await sourceToHirePage.dateRange.getActiveRange();
+      const {
+        expected,
+        comparisonAvailable,
+        previous,
+        span: dataSpan,
+      } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, 'custom');
+      // oracle-ok: the board's bounds only decide the WP23-213 D-1 label, never an expected value.
+      const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
+      if (comparisonGateDefectApplies(activeRange, previous, dataSpan, boardRange)) {
+        markKnownDefect(KNOWN_DEFECTS.comparisonGate);
+      }
+      console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
+      await expect
+        .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
+        .toEqual(expected);
       expect(comparisonAvailable).toBe(false);
     },
   );
@@ -349,12 +341,22 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
         );
 
         await sourceToHirePage.setCustomGlobalDateRange(window!.startDate, window!.endDate);
-        const { comparisonAvailable } = await expectTilesToMatchWarehouse(
-          sourceToHirePage,
-          widgetRequests,
-          sourceToHireRepository,
-          'custom',
-        );
+        const activeRange = await sourceToHirePage.dateRange.getActiveRange();
+        const {
+          expected,
+          comparisonAvailable,
+          previous,
+          span: dataSpan,
+        } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, 'custom');
+        // oracle-ok: the board's bounds only decide the WP23-213 D-1 label, never an expected value.
+        const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
+        if (comparisonGateDefectApplies(activeRange, previous, dataSpan, boardRange)) {
+          markKnownDefect(KNOWN_DEFECTS.comparisonGate);
+        }
+        console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
+        await expect
+          .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
+          .toEqual(expected);
         expect(comparisonAvailable).toBe(true);
         const applications = (await sourceToHirePage.summary.readTiles())[0]!;
         expect(applications.tone).toBe(TREND_TONE[band]);

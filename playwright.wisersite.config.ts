@@ -2,9 +2,19 @@ import { defineConfig, devices } from '@playwright/test';
 import 'dotenv/config';
 import { wisersiteEnv } from './src/config/wisersite.env';
 
+/** `RETRIES=<n>` as a whole number; anything else stops the run rather than silently not retrying. */
+function retriesFromEnv(): number | undefined {
+  const raw = process.env.RETRIES?.trim();
+  if (!raw) return undefined;
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`RETRIES must be a whole number of retries (e.g. RETRIES=2), got "${raw}"`);
+  }
+  return Number(raw);
+}
+
 /**
  * Separate Playwright config for testing wisersite-and-payload-plugin
- * (D:\Repositories\wiser-projects\wisersite-and-payload-plugin), kept apart from
+ * (`../wisersite-and-payload-plugin`, next to this repo), kept apart from
  * playwright.config.ts (the bundled Employee Directory demo) so the two suites' env,
  * global setup, and DB connections never mix — critically, so this suite's global setup
  * can never accidentally run the bundled suite's schema DROP+CREATE
@@ -25,7 +35,7 @@ export default defineConfig({
   // server's on-demand compile makes a first page load time out). A test that fails and then
   // passes on retry is reported as "flaky", not "passed", and `trace: 'on-first-retry'` below
   // records a trace of the retried attempt.
-  retries: process.env.RETRIES ? Number(process.env.RETRIES) : process.env.CI ? 2 : 0,
+  retries: retriesFromEnv() ?? (process.env.CI ? 2 : 0),
   workers: 1,
   // Next.js dev mode compiles routes on demand — a route hit for the first time in a while
   // can take much longer than Playwright's 30s default test timeout to even render.

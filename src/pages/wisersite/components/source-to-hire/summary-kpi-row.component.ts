@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import {
+  BADGE_TONE_COLOUR_TOKENS,
   LOADING_PLACEHOLDER,
   SUMMARY_TILE_LABELS,
   WIDGET_TIMEOUT_MS,
@@ -8,9 +9,7 @@ import type {
   SummaryTileLabel,
   SummaryTileReading,
 } from '../../../../types/wisersite/source-to-hire.types';
-import { classModifier } from '../../../../utils/dom/css';
-
-const BADGE_TONES = ['positive', 'negative', 'neutral'] as const;
+import { matchTextColourToken } from '../../../../utils/dom/css';
 
 /**
  * One SummaryKpiTile: `<p>{label}</p>`, then a value row holding the value `<p>` and — when
@@ -54,9 +53,7 @@ export class SummaryKpiTile {
         ? ((await this.comparisonCaption.textContent()) ?? '').trim()
         : null,
       sparklineLabel: await this.sparkline.getAttribute('aria-label'),
-      tone: hasBadge
-        ? classModifier((await this.badge.getAttribute('class')) ?? '', BADGE_TONES)
-        : null,
+      tone: hasBadge ? await matchTextColourToken(this.badge, BADGE_TONE_COLOUR_TOKENS) : null,
     };
   }
 }

@@ -1,5 +1,11 @@
 import { expect, test } from '../../../src/fixtures/wisersite.fixtures';
-import { hireRateLabel } from '../../../src/expectations/wisersite/source-breakdown.expectations';
+import { WIDGET_TIMEOUT_MS } from '../../../src/constants/wisersite/source-to-hire.constants';
+import {
+  expectedApplicationsBySourceRows,
+  expectedSourcePerformanceRows,
+  hireRateLabel,
+  rowsBySource,
+} from '../../../src/expectations/wisersite/source-breakdown.expectations';
 import { details, markLimitedByData } from '../../../src/utils/playwright/test-annotations';
 
 /**
@@ -20,15 +26,26 @@ test.describe('WP23-156 AC 1.1.3 / WP23-159 AC 2.4 cross-widget consistency', ()
       const { applicationsBySource, sourcePerformance } = sourceToHirePage;
       await sourceToHirePage.summary.waitForLoaded();
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
-      await applicationsBySource.waitForRows();
-      await sourcePerformance.waitForRows();
 
       const { startDate, endDate } = await sourceToHirePage.dateRange.getActiveRange();
+      const bySource = await sourceToHireRepository.getBySource(startDate, endDate);
+      test.skip(bySource.length === 0, 'No applications in the last 12 months to compare.');
+      // Wait for both widgets to show the 12-month data: the previous preset's rows stay on
+      // screen until the new ones arrive. Applications by Source by counts in order, since a tie
+      // at the 6th place may break either way (ticket silent).
+      await expect
+        .poll(async () => (await applicationsBySource.readRows()).map((row) => row.applications), {
+          timeout: WIDGET_TIMEOUT_MS,
+        })
+        .toEqual(expectedApplicationsBySourceRows(bySource).map((row) => row.applications));
+      await expect
+        .poll(async () => rowsBySource(await sourcePerformance.readRows()), {
+          timeout: WIDGET_TIMEOUT_MS,
+        })
+        .toEqual(rowsBySource(expectedSourcePerformanceRows(bySource)));
+
       const expectedRateBySource = Object.fromEntries(
-        (await sourceToHireRepository.getBySource(startDate, endDate)).map((row) => [
-          row.sourceChannel,
-          hireRateLabel(row.hires, row.applications),
-        ]),
+        bySource.map((row) => [row.sourceChannel, hireRateLabel(row.hires, row.applications)]),
       );
       if (Object.values(expectedRateBySource).every((rate) => rate === hireRateLabel(0, 1))) {
         markLimitedByData('No hires in the last 12 months: every rate was only checked at 0.0%.');
