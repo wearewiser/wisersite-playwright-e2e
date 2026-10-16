@@ -10,3 +10,12 @@ npm-debug.log*
 *.log
 .DS_Store
 Thumbs.db
+
+# Claude Code personal settings (team settings live in .claude/settings.json)
+.claude/settings.local.json
+
+# QA review and business reports (regenerated per run; outside test-results/, which Playwright empties)
+reports/
+
+# Test plans and suspected-defect notes stay local to the author; tooling copes when they're absent
+docs/

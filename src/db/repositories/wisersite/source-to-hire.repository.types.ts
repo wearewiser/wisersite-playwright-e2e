@@ -32,6 +32,18 @@ export type SourceBreakdown = {
   applications: number;
   screened: number;
   hires: number;
-  /** `hires / applications * 100`, formatted like the UI: one decimal place + '%'. */
-  hireRateLabel: string;
 };
+
+/** The cohort's first and last application date (`YYYY-MM-DD`, inclusive). */
+export type DataSpan = { minDate: string; maxDate: string };
+
+/** Raw shape of one row from the per-day counts query, before mapping. */
+export type DailyCountsRow = {
+  day: string;
+  applications: number;
+  screened: number;
+  hires: number;
+};
+
+/** One day's cohort counts. Days without applications are absent. */
+export type DailyCounts = DailyCountsRow;

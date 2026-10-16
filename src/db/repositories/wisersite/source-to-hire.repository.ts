@@ -1,5 +1,8 @@
 import type { TenantSqlClient } from '../../wisersite-db-client';
 import type {
+  DailyCounts,
+  DailyCountsRow,
+  DataSpan,
   SourceBreakdown,
   SourceBreakdownRawRow,
   SourceToHireSummary,
@@ -36,11 +39,58 @@ export class SourceToHireRepository {
   }
 
   /**
+   * First and last `application_created_date` in the cohort — the "available data" WP23-87 AC 5
+   * gates comparisons on. Taken from the warehouse itself, not from the `minDate`/`maxDate` the
+   * board sends (on an environment without the analytics date-range API those are a today−90
+   * fallback, not the data). `null` when the cohort is empty.
+   */
+  async getDataSpan(): Promise<DataSpan | null> {
+    const row = await this.db.queryOne<{ min_date: string | null; max_date: string | null }>(
+      `SELECT
+         to_char(MIN(application_created_date), 'YYYY-MM-DD') AS min_date,
+         to_char(MAX(application_created_date), 'YYYY-MM-DD') AS max_date
+       FROM ${ATS_APPLICATIONS_TABLE}
+       WHERE NOT is_deleted
+         AND NOT internal_application`,
+    );
+    if (!row?.min_date || !row.max_date) return null;
+    return { minDate: row.min_date, maxDate: row.max_date };
+  }
+
+  /**
+   * Applications / screened / hires per day with any applications, same cohort as `getSummary`.
+   * Lets a test pick a custom window that lands in a specific WP23-87 AC 3 band from what the
+   * warehouse holds, instead of hard-coding dates.
+   */
+  async getDailyCounts(startDate: string, endDate: string): Promise<DailyCounts[]> {
+    const rows = await this.db.query<DailyCountsRow>(
+      `SELECT
+         to_char(application_created_date, 'YYYY-MM-DD') AS day,
+         COUNT(*)::int AS applications,
+         COUNT(*) FILTER (WHERE is_screened)::int AS screened,
+         COUNT(*) FILTER (WHERE is_hired)::int AS hires
+       FROM ${ATS_APPLICATIONS_TABLE}
+       WHERE application_created_date BETWEEN $1::date AND $2::date
+         AND NOT is_deleted
+         AND NOT internal_application
+       GROUP BY application_created_date
+       ORDER BY application_created_date`,
+      [startDate, endDate],
+    );
+    return rows.map((row) => ({
+      day: row.day,
+      applications: Number(row.applications),
+      screened: Number(row.screened),
+      hires: Number(row.hires),
+    }));
+  }
+
+  /**
    * Per-`source_channel` application/screened/hire counts for the window — backs both
    * "Applications by Source" (top 6 by applications) and "Source Performance Breakdown"
    * (all rows) in the app, which both render `getSourcePerformanceBreakdown`'s output.
-   * Same cohort exclusions as `getSummary`; drops blank channels and zero-application rows,
-   * same as the app's `shapeSourcePerformanceBreakdown`.
+   * Same cohort exclusions as `getSummary`. Drops zero-application rows (WP23-159 AC 4.3) and
+   * blank channels (AC silent; ticket thread: nulls are stored but excluded from the UI).
    */
   async getBySource(startDate: string, endDate: string): Promise<SourceBreakdown[]> {
     const rows = await this.db.query<SourceBreakdownRawRow>(
@@ -68,15 +118,11 @@ export class SourceToHireRepository {
   }
 
   private mapBreakdownRow(row: SourceBreakdownRawRow): SourceBreakdown {
-    const applications = Number(row.applications);
-    const hires = Number(row.hires);
-    const hireRate = applications > 0 ? (hires / applications) * 100 : 0;
     return {
       sourceChannel: row.source_channel,
-      applications,
+      applications: Number(row.applications),
       screened: Number(row.screened),
-      hires,
-      hireRateLabel: `${hireRate.toFixed(1)}%`,
+      hires: Number(row.hires),
     };
   }
 

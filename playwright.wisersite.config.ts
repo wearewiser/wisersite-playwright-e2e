@@ -2,9 +2,19 @@ import { defineConfig, devices } from '@playwright/test';
 import 'dotenv/config';
 import { wisersiteEnv } from './src/config/wisersite.env';
 
+/** `RETRIES=<n>` as a whole number; anything else stops the run rather than silently not retrying. */
+function retriesFromEnv(): number | undefined {
+  const raw = process.env.RETRIES?.trim();
+  if (!raw) return undefined;
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`RETRIES must be a whole number of retries (e.g. RETRIES=2), got "${raw}"`);
+  }
+  return Number(raw);
+}
+
 /**
  * Separate Playwright config for testing wisersite-and-payload-plugin
- * (D:\Repositories\wiser-projects\wisersite-and-payload-plugin), kept apart from
+ * (`../wisersite-and-payload-plugin`, next to this repo), kept apart from
  * playwright.config.ts (the bundled Employee Directory demo) so the two suites' env,
  * global setup, and DB connections never mix — critically, so this suite's global setup
  * can never accidentally run the bundled suite's schema DROP+CREATE
@@ -20,19 +30,24 @@ export default defineConfig({
 
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // Off locally by default so a genuine failure is never hidden behind a passing retry. Opt in
+  // per run with `npm run test:retry`, `--retries=<n>`, or `RETRIES=<n>` (e.g. when the dev
+  // server's on-demand compile makes a first page load time out). A test that fails and then
+  // passes on retry is reported as "flaky", not "passed", and `trace: 'on-first-retry'` below
+  // records a trace of the retried attempt.
+  retries: retriesFromEnv() ?? (process.env.CI ? 2 : 0),
   workers: 1,
   // Next.js dev mode compiles routes on demand — a route hit for the first time in a while
   // can take much longer than Playwright's 30s default test timeout to even render.
   timeout: 60_000,
 
-  reporter: [
-    ['list'],
-    ['html', { open: 'never', outputFolder: 'playwright-report-wisersite' }],
-  ],
+  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report-wisersite' }]],
 
   use: {
     baseURL: wisersiteEnv.WISERSITE_BASE_URL,
+    // `npm run test:tz:<zone>` sets both TZ (the oracle's date maths in Node) and TEST_TZ (the
+    // browser), to catch the month/day-shift class of bug (KNOWN-DEFECTS TZ-1). Unset = local.
+    ...(process.env.TEST_TZ ? { timezoneId: process.env.TEST_TZ } : {}),
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
