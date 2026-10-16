@@ -24,14 +24,19 @@ export default async function globalSetup(): Promise<void> {
 
 async function assertAppIsUp(baseUrl: string): Promise<void> {
   const url = new URL('/admin', baseUrl).toString();
+  let response: Response;
   try {
-    const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(30_000) });
-    if (response.status < 500) return;
-    throw new Error(`HTTP ${response.status}`);
+    response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(30_000) });
   } catch (error) {
     throw new Error(
       `ENVIRONMENT: the app is not reachable at ${url} (${(error as Error).message}). ` +
         'Start it (`pnpm dev` in ../wisersite-and-payload-plugin) and run again.',
+    );
+  }
+  if (response.status >= 500) {
+    throw new Error(
+      `ENVIRONMENT: the app is running at ${url} but answered HTTP ${response.status}. ` +
+        'Check the dev server output in ../wisersite-and-payload-plugin for the error.',
     );
   }
 }
