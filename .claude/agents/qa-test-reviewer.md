@@ -53,22 +53,31 @@ the scripts, the `review.json` format and the report builder. Then:
    finding). Re-review: load the previous `review.json` and replay its
    saved spot checks.
 2. **Read the suite** — every spec in scope, plus the components, repositories and
-   expectations it uses. Run `ac-coverage.cjs` for the tag-based map, then confirm each AC
+   expectations it uses, **and every other file changed on the branch**
+   (`git diff --stat main...HEAD` plus uncommitted changes): global setup, config,
+   `package.json`, scripts, skills. A human reviewer reads the whole diff, so you do too. Run `ac-coverage.cjs` for the tag-based map, then confirm each AC
    against what the code really asserts; a tag that over-claims is a finding. Use
    `map-feature-code` where you need the app's semantics to judge an oracle.
 3. **Run** — environment check, static checks (typecheck, lint, oracle independence, defect
    labels), the headed main run with JSON, the headless 3× repeat for flaky or
-   suspicious specs, timezone runs for date-sensitive specs, environment check again. Classify
+   suspicious specs, timezone runs for date-sensitive specs (always including
+   `npm run test:tz:offday`; a zone run where the local and UTC dates matched counts as
+   "not exercised", never as a pass), environment check again. Classify
    every non-pass (the builder separates new / known defect / suspected defect / environment).
 4. **Spot-check** — re-derive 1–3 values per ticket with your own SQL, **saved** with
    `replay-spot-checks.cjs save`, and compare UI vs your SQL vs the suite's oracle. Confirm
    suspected gaps live with `explore-live-ui` when it helps (`--compare-presets` for widget
    period controls).
-5. **Checklist** — work through sections A–E; every warn/fail becomes a finding with
+5. **Checklist** — work through sections A–G; every warn/fail becomes a finding with
    severity, file:line and a concrete recommendation (what assertion or scenario to add,
-   which data unlocks it). Re-review: give every previous finding a `status` + `statusNote`.
+   which data unlocks it). F covers the files outside specs and page objects. G is the
+   free-form pass: for each test, "how could this pass while the feature is broken?". You
+   share the author's model and checklist, so G is where you catch what you'd both miss.
+   When you find a pattern, list **every** instance, not the first. Re-review: give every previous finding a `status` + `statusNote`.
 6. **Report** — write `review.json`, run `build-report.cjs` into `reports/qa-review/`, then
-   `qa-business-report` into `reports/business/`, and check both rendered.
+   `qa-business-report` into `reports/business/` (one per epic, `--only <spec folder>/` when
+   the run covers the whole suite), and check both rendered. Performance/timing ACs and
+   defects accepted in `docs/suspected-defects.md` go under `notTested`, not findings.
 
 ## Final message (the parent session relays it)
 

@@ -26,7 +26,7 @@ self-contained file to open or attach). Nothing here touches tests, the app or J
   sharing a `title` in one area become one row with a badge per variant. Write these for a
   recruiter, not a developer: no selectors, no SQL, no AC numbers.
 - **Runtime labels.** `markLimitedByData()` → Partly verified, `markKnownDefect()` → Known
-  issue, `markSuspectedDefect()` → Needs a decision. Their text appears as notes, so write them
+  issue (its text starts with the Jira key, so readers see which ticket covers it), `markSuspectedDefect()` → Needs a decision. Their text appears as notes, so write them
   in plain language too.
 - **Context file** `docs/test-plans/<KEY>.business.json` (local, next to the test plan;
   `docs/` is gitignored):
@@ -40,8 +40,15 @@ self-contained file to open or attach). Nothing here touches tests, the app or J
 node .claude/skills/qa-business-report/scripts/build-business-report.cjs \
   --results /tmp/<SCOPE>-review/run-main.json \
   --context docs/test-plans/<KEY>.business.json \
+  --only <spec folder>/ \
   --out reports/business/<YYYY-MM-DD>-<scope>-test-coverage.html
 ```
+
+One report per epic. When the run covers the whole suite, `--only` (e.g. `source-to-hire/`,
+`candidate-pipeline/`, the folder under `tests/e2e-wisersite/`) keeps that epic's specs;
+without it every test in the run is counted in every report. It exits non-zero when the folder
+matches nothing. A test deleted after the run (still in the JSON as skipped) must not show as
+"Not run yet": drop it from a copy of the JSON, or rerun.
 
 ## 3. Check before sharing
 

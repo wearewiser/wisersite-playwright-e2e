@@ -24,6 +24,13 @@ export const GLOBAL_PRESETS: readonly GlobalPresetLabel[] = [
   'Last 12 months',
 ];
 
+/** How many months each "Last N months" preset spans; "Last 30 days" has no entry. */
+export const MONTH_PRESET_LENGTH: Partial<Record<GlobalPresetLabel, number>> = {
+  'Last 3 months': 3,
+  'Last 6 months': 6,
+  'Last 12 months': 12,
+};
+
 export const SUMMARY_TILE_LABELS: readonly SummaryTileLabel[] = [
   'Total Applications',
   'Total Screened',
@@ -75,10 +82,17 @@ export const FIRST_LOAD_TIMEOUT_MS = 45_000;
 
 /**
  * The summary delta badge's tone, by the theme colour its text is painted in (the app's
- * `--tone-*` tokens). Read from the rendered colour, never from CSS-module class names.
+ * `--tone-*` tokens). Read from the rendered colour, never from CSS-module class names. A red
+ * badge's text uses the lighter `--tone-negative-label`, for contrast inside a pill (WP23-421).
  */
 export const BADGE_TONE_COLOUR_TOKENS = {
   positive: '--tone-positive',
-  negative: '--tone-negative',
+  negative: '--tone-negative-label',
   neutral: '--tone-neutral',
 } as const;
+
+/** Length of the empty custom range the empty-window test picks (the picker needs 7+ days). */
+export const EMPTY_WINDOW_DAYS = 14;
+
+/** How far back the date picker page object pages the calendar (`MAX_MONTH_PAGES`). */
+export const DATE_PICKER_MONTHS_BACK = 47;

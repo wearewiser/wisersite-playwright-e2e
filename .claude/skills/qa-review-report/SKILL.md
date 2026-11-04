@@ -32,6 +32,16 @@ the previous findings as the starting list. Set each finding's `status` to `fixe
   `docs/suspected-defects.md` (local only, like the test plan; when it's absent, take suspected
   defects from `SUSPECTED_DEFECTS` in `src/constants/wisersite/known-defects.constants.ts`).
 - Semantics: `map-feature-code` only where you need to judge whether an oracle is right.
+- **Changed files: the whole branch, not just the specs.** A human code reviewer reads every
+  file in the diff, so you do too:
+
+  ```bash
+  git diff --stat main...HEAD; git status --short    # committed + uncommitted
+  ```
+
+  Global setup, Playwright config, `package.json` scripts, env parsing, fixtures, `.claude/`
+  scripts and skills are all in scope (checklist section F). On `main`, or with no scope key,
+  review those files in full.
 
 ## 2. Run the suite
 
@@ -62,8 +72,12 @@ PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/<SCOPE>-review/run-main.json \
   ```
 
   Suspicious = anything touching hover, localStorage, date boundaries, or that failed once.
-- Timezones, for date-sensitive specs: `npm run test:tz:london -- <spec>` and
-  `npm run test:tz:auckland -- <spec>` (headless). A zone-only failure is a finding.
+- Timezones, for date-sensitive specs: `npm run test:tz:offday -- <spec>` always, plus
+  `npm run test:tz:london -- <spec>` and `npm run test:tz:auckland -- <spec>` (headless). A
+  zone-only failure is a finding. **A zone run only counts if the local date differed from
+  UTC during it**: `test:tz:offday` guarantees that and prints the dates. For Auckland and
+  London, record the local and UTC dates at the start, and report a run where they matched
+  as "not exercised", not as a pass. Never write "no timezone issues" on a same-date run.
 - Playwright empties `test-results/` at the start of **every** run. Copy what you need
   (`error-context.md`, screenshots) to `/tmp/<SCOPE>-review/` before the next run, and build
   the report only after the last run.
@@ -86,7 +100,8 @@ node .claude/skills/qa-review-report/scripts/ac-coverage.cjs \
 ```
 
 Record each check (`pass` / `warn` / `fail` / `n/a`) with one line of evidence. Anything
-`warn`/`fail` also gets a finding.
+`warn`/`fail` also gets a finding. Sections A–G all apply; F covers files outside specs and
+page objects, and G is the free-form pass that catches what the list doesn't.
 
 **A. Coverage and traceability**
 1. Every ticket in scope (status Done / In QA / similar) has at least one spec; Closed /
@@ -102,7 +117,9 @@ Record each check (`pass` / `warn` / `fail` / `n/a`) with one line of evidence. 
 6. Non-functional ACs are covered or explicitly out of scope: permissions/access gate
    (`canViewAnalytics`, 403 vs 404), empty states, loading, persistence across reload,
    accessibility (screen-reader tables, accessible names), formatting (locale numbers, %,
-   rounding).
+   rounding). **Performance/timing ACs** ("shown within 1 s") are out of scope for this repo,
+   and defects under "Known defects accepted" in `docs/suspected-defects.md` are no longer
+   tested by decision: list both under `notTested`, not as findings.
 
 **B. Is it tested right — assertion quality**
 7. **Oracle independence**: expected values come from repositories in `src/db/repositories/`
@@ -127,13 +144,27 @@ Record each check (`pass` / `warn` / `fail` / `n/a`) with one line of evidence. 
 13. **Skips** (`test.skip`, `test.fixme`): each has a data-terms reason and is decided from
     Postgres at runtime. A skip that always fires on this tenant = untested AC (list it).
 14. **Defect labels**: tests that hit a logged defect fail red with `markKnownDefect()` citing
-    an open KNOWN-DEFECTS.md ID; tests that hit an unlogged one fail red with
+    its Jira key (resolved to an open KNOWN-DEFECTS.md row through `KNOWN_DEFECT_REGISTER_ROWS`)
+    or, with no ticket, the register ID; tests that hit an unlogged one fail red with
     `markSuspectedDefect()` and a row in `docs/suspected-defects.md`. Any `test.fail()` = finding
     (it hides bugs). A labelled test that passes, or a label `check-defect-labels.cjs` flags =
     finding. An unlabelled failure is a new problem until shown otherwise. An app/AC mismatch
     the suite works around instead of asserting the AC = blocker.
 15. **Waits**: assertions wait for the widget's request for the new window (request tracker)
-    before reading; no `waitForTimeout`, no sleeps, no retries used as a fix.
+    before reading; no `waitForTimeout`, no sleeps, no retries used as a fix. **Stale reads**:
+    after every preset/period/filter change, find what the next read waits for. "Some rows
+    exist" (`waitForRows()`, `toBeVisible()`, a non-zero count) is satisfied by the previous
+    window's rows, so it's a finding unless a request wait or an equals-the-expected poll
+    follows. Grep for every instance, not just the first.
+15a. **Can it fail?** For each negative or containment check ("didn't refetch", "stays
+    hidden", "unchanged"), ask: does it run after the bad thing would have happened, and does
+    the evidence show it was ever seen failing (a break-it note from the author, or your own
+    reasoning about timing)? A check that runs before the unwanted effect could start proves
+    nothing (major).
+15b. **Label scope**: for each `markKnownDefect()` / `markSuspectedDefect()`, ask "if this
+    test failed for a different reason, would it still be labelled?" A label applied before
+    a broad assertion, or for windows/presets/zones the defect doesn't cover, hides new
+    failures (major).
 16. **Isolation**: no order dependence, no shared page across tests, localStorage filter state
     doesn't leak.
 
@@ -162,12 +193,38 @@ Record each check (`pass` / `warn` / `fail` / `n/a`) with one line of evidence. 
     network/expectations.
 25. Locators: role + exact name, accessible table/status/combobox inside the widget root;
     no hashed CSS-module classes, no `nth()` without a reason; charts read through their
-    screen-reader tables.
+    screen-reader tables. No class names read for state or colour (use rendered colour via
+    `matchTextColourToken()`, visibility for expanded/collapsed). Interactions are real user
+    input: any `dispatchEvent()` or synthetic event is a finding.
+25a. Specs declare no helper functions that call `expect` (`check-oracle-independence.cjs`
+    reports them as SPEC-HELPER); they escape the oracle checks.
 26. UI only: every test opens the board in the browser and asserts what a user sees. A test
     that only calls expectation or utility functions, or a spec outside `tests/e2e-wisersite/`,
     is a finding.
 27. Readability: test names state the behaviour and the AC; `title`/`what` read well for
     business readers; failure messages identify the window and expected vs actual values.
+
+**F. Infrastructure: everything in the diff that isn't a spec or page object**
+28. Global setup and teardown: each error path reports the real cause. `try` blocks wrap
+    only the call that can fail for the reason the `catch` gives (a 5xx inside a `try` whose
+    `catch` says "not reachable" is a finding).
+29. Config and env parsing (`playwright.*.config.ts`, `src/config/`): invalid values (`NaN`
+    from `Number('abc')`, empty strings, unknown enum values) are rejected loudly, never
+    silently turned into defaults that change the run (e.g. retries off).
+30. `package.json` scripts and `.claude/**/scripts/*.cjs`: they do what their skill says,
+    fail with a non-zero exit when they find problems, and don't silently skip files.
+31. Skills, agents, README and CLAUDE.md agree with the code and with each other (no rule
+    that one file states and another contradicts, e.g. "docs/ is committed" vs `.gitignore`).
+
+**G. Free-form pass: think like a human reviewer**
+
+The checklist catches what it lists. After it, go back through every changed spec and
+component once more and, for each test, answer in one line: **"How could this pass while the
+feature is broken?"** Think about stale content, wrong timing, synthetic input, labels that
+cover too much, an expected value that equals the actual by construction, dates that agree
+only at this hour. Each believable answer is a finding, whatever section it belongs to.
+Where you can show it, do so: run the test against a broken state you can produce without
+editing files (another preset, a zone, a window with no data) and record the result.
 
 ## 4. Independent spot checks (saved, replayable)
 
@@ -189,13 +246,18 @@ Playwright MCP (read-only, never save anything) so the gap finding says what the
 
 - `changes-requested`: any blocker — an AC with no real assertion while the ticket is in
   scope, a non-independent oracle, an assertion weakened to match a defect, a failing test
-  that is a test bug, an oracle that is wrong.
+  that is a test bug, an oracle that is wrong, or a break of any CLAUDE.md "never" rule
+  (hashed CSS classes, `test.fail()`, browser-free tests, hard-coded dates, a known-defect
+  label hiding unrelated failures). The repo's own hard rules are not majors.
 - `approve-with-comments`: no blockers, but majors (flaky, vacuous-on-current-data, weak
-  matchers, missing edge cases, missing test plan, structure violations).
+  matchers, missing edge cases, stale reads, checks that can't fail, over-broad defect
+  labels, infrastructure error paths that misreport). A missing test plan isn't a finding
+  (`docs/` is local only).
 - `approve`: only minors/nits.
 
-Severity: **blocker** (the suite gives false confidence about an AC), **major** (coverage or
-reliability gap), **minor** (maintainability, weak edge case), **nit** (style).
+Severity: **blocker** (the suite gives false confidence about an AC, or breaks a CLAUDE.md
+hard rule), **major** (coverage or reliability gap), **minor** (maintainability, weak edge
+case), **nit** (style).
 
 ## 6. Build the reports
 
@@ -254,4 +316,5 @@ passes into passed / limited by data. Counts come from Playwright's JSON, so don
 different numbers in `summary`. Open the HTML once to make sure it rendered.
 
 Then build the business report from the same main run with the `qa-business-report` skill
-(`reports/business/…`), so stakeholders get the plain-language view of the same results.
+(`reports/business/…`), so stakeholders get the plain-language view of the same results: one
+report per epic, using `--only <spec folder>/` when the run covers the whole suite.

@@ -36,7 +36,11 @@ node .claude/skills/stabilize-e2e-tests/scripts/check-defect-labels.cjs --strict
 
 `check-defect-labels` reports labels whose defect is fixed or superseded in KNOWN-DEFECTS.md
 (remove the label and re-check the test), suspected defects that have since been logged (move
-them to `KNOWN_DEFECTS`), and unused constants.
+them to `KNOWN_DEFECTS`, citing the Jira key; add the key to `KNOWN_DEFECT_REGISTER_ROWS` if the
+register row has another ID), and unused constants. It resolves Jira keys through
+`KNOWN_DEFECT_REGISTER_ROWS`; it never needs, and you never make, an edit to KNOWN-DEFECTS.md.
+A defect the user or PO **accepts** is no longer tested: remove the test or assertion and its
+label, and add it to "Known defects accepted" in `docs/suspected-defects.md`.
 
 ## 2. Run
 
@@ -67,17 +71,36 @@ first, then the whole suite (`npm test`) to catch fixture/shared-component regre
 the assertion, no asserting the app's value because "that's what it shows". If the oracle
 itself is wrong, fix it to match the **AC** and document why in a comment.
 
+**Fix the pattern, not the line.** A test bug, or a code-review comment citing file:line, is
+one example of a pattern. Name the pattern, grep `src/` and `tests/` for every other
+occurrence, fix them all, and list the extra places in your report. Then prove the fix with a
+break-it run (`write-e2e-tests`, "Prove it can fail") wherever the test is meant to catch
+something.
+
 ## 4. Flakiness
 
 ```bash
 npx playwright test -c playwright.wisersite.config.ts <spec> --repeat-each=3 --reporter=list
 ```
 
-Any spec that is not 3/3 is flaky. Typical causes here: reading a widget before its refetch
-for the new window landed (poll on `widgetRequests.last(key)` first), hover readouts (use
-`dispatchEvent('pointerover')` as in `HireDistributionWidget`), localStorage filter leaking
-between tests (each test gets a fresh context; don't share pages), and data near a moving
-window boundary (compute from the request params). Fix the cause; never add retries or sleeps.
+Any spec that is not 3/3 is flaky. Typical causes here:
+
+- **Stale reads.** After a preset or period change the widget keeps showing the *previous*
+  window's rows until the refetch lands, so "wait until there are rows" (`waitForRows()`,
+  `toBeVisible()`, `toHaveCount(n > 0)`) passes at once on the old content. Before reading,
+  wait for the widget's request for the **new** window (`expect.poll(() =>
+  widgetRequests.last(key)).toEqual(window)`), or poll the reading until it **equals** the
+  expected value (`expect.poll(() => widget.readRows()).toEqual(expected)`), which an old
+  reading can't satisfy. When you find one stale read, grep every spec for the same pattern.
+- **Hover readouts.** Use a real mouse hover (`locator.hover({ position })`, with
+  `ownHitPoint()` from `src/utils/dom/hit-point.ts` for shapes like donut arcs). Never
+  `dispatchEvent('pointerover')` or other synthetic events: they pass even when a user can't
+  trigger the readout.
+- **State leaking** between tests through localStorage (each test gets a fresh context; don't
+  share pages).
+- **Moving window boundaries** (compute from the request params).
+
+Fix the cause; never add retries or sleeps.
 
 ## 4b. Timezones (date-sensitive specs)
 
@@ -91,6 +114,19 @@ npm run test:tz:utc -- <spec>; npm run test:tz:london -- <spec>; npm run test:tz
 Each sets `TZ` (the oracle's date maths in Node) and `TEST_TZ` (the browser's `timezoneId`).
 The app server keeps its own zone. A failure in one zone only is a timezone bug: in the test's
 date maths (fix it) or in the app (defect, with the zone in the evidence).
+
+**A zone run only proves something when its local date differs from the UTC date.** Auckland
+at 23:44 has the same date as UTC and finds nothing. So always add the off-day run, which
+picks whichever of `Pacific/Kiritimati` (UTC+14) or `Pacific/Pago_Pago` (UTC−11) is on a
+different calendar day right now (at any time of day, one of them is), and checks that the
+dates still differed when the run finished:
+
+```bash
+npm run test:tz:offday -- <spec>
+```
+
+It prints the zone, the local, UTC and server dates, and refuses to start with less than 30
+minutes of off-day time left. In a report, a zone run whose dates matched counts as "not run".
 
 ## 5. Final state to report
 

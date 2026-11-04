@@ -5,7 +5,11 @@
  *   node .claude/skills/qa-business-report/scripts/build-business-report.cjs \
  *     --results /tmp/<SCOPE>-review/run-main.json \
  *     --context docs/test-plans/<KEY>.business.json \
- *     --out reports/business/<YYYY-MM-DD>-<scope>-test-coverage.html
+ *     --out reports/business/<YYYY-MM-DD>-<scope>-test-coverage.html \
+ *     [--only <spec folder under tests/e2e-wisersite, e.g. source-to-hire/>]
+ *
+ * `--only` keeps the epic's own specs when the run covers the whole suite, so each epic's
+ * report counts only its checks.
  *
  * Everything per test comes from the run and the tests' own annotations
  * (src/utils/playwright/test-annotations.ts): `title` / `what` / `variant` for the wording, the
@@ -62,7 +66,7 @@ const ORDER = ['ok', 'limited', 'known', 'fail', 'new', 'flaky', 'env', 'notrun'
 const WORST = ['new', 'fail', 'known', 'env', 'flaky', 'notrun', 'limited', 'ok'];
 const ENVIRONMENT_ERROR = /ERR_CONNECTION_REFUSED|ECONNREFUSED|ECONNRESET|net::ERR_|ENVIRONMENT:/;
 
-function collect(run) {
+function collect(run, only) {
   const tests = [];
   const walk = (suite) => {
     for (const spec of suite.specs ?? []) {
@@ -99,7 +103,7 @@ function collect(run) {
     }
     for (const child of suite.suites ?? []) walk(child);
   };
-  for (const s of run.suites ?? []) walk(s);
+  for (const s of run.suites ?? []) if (!only || (s.file ?? '').startsWith(only)) walk(s);
   return tests;
 }
 
@@ -130,8 +134,18 @@ function bar(c, total, big = false) {
 
 function main() {
   const args = parseArgs(process.argv);
+  if ('only' in args && (!args.only || args.only.startsWith('--'))) {
+    console.error('--only needs a spec folder under tests/e2e-wisersite, e.g. --only source-to-hire/');
+    process.exit(1);
+  }
+  // The run's suite paths are relative to the test dir; accept the repo-relative form too.
+  if (args.only) args.only = args.only.replace(/^(\.\/)?tests\/e2e-wisersite\//, '');
   const ctx = JSON.parse(fs.readFileSync(args.context, 'utf8'));
-  const tests = collect(JSON.parse(fs.readFileSync(args.results, 'utf8')));
+  const tests = collect(JSON.parse(fs.readFileSync(args.results, 'utf8')), args.only);
+  if (args.only && tests.length === 0) {
+    console.error(`No tests under "${args.only}" in ${args.results}`);
+    process.exit(1);
+  }
   const total = tests.length;
   const c = countOf(tests);
 

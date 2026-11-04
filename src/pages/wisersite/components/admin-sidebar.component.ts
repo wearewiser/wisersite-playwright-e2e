@@ -49,8 +49,18 @@ export class AdminSidebar {
 
   /** Opens the rail, expands `groupLabel`, and clicks its `linkLabel` entry. */
   async navigateTo(groupLabel: string, linkLabel: string): Promise<void> {
+    await this.revealLink(groupLabel, linkLabel);
+    await this.clickLink(groupLabel, linkLabel);
+  }
+
+  /** Opens the rail and expands `groupLabel` until its `linkLabel` entry is showing. */
+  async revealLink(groupLabel: string, linkLabel: string): Promise<void> {
     await this.open();
     await this.expandGroup(groupLabel, linkLabel);
+  }
+
+  /** Clicks an entry that `revealLink` has made visible. */
+  async clickLink(groupLabel: string, linkLabel: string): Promise<void> {
     await this.groupLink(groupLabel, linkLabel).click();
   }
 

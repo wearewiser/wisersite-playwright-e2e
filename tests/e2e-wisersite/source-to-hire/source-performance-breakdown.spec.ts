@@ -11,23 +11,19 @@ import {
   expectedApplicationsBySourceRows,
   expectedSourcePerformanceRows,
   rowsBySource,
-  widgetMonthPresetDefectApplies,
 } from '../../../src/expectations/wisersite/source-breakdown.expectations';
 import {
   expectedHiresTrendTable,
   plottedSources,
 } from '../../../src/expectations/wisersite/hires-trend.expectations';
 import { formatLocaleCount } from '../../../src/utils/format/locale-number';
-import { isSorted } from '../../../src/utils/sort';
+import { isSorted, sameMembers } from '../../../src/utils/sort';
 import {
   details,
   markLimitedByData,
   markSuspectedDefect,
 } from '../../../src/utils/playwright/test-annotations';
-import {
-  hiresTrendMonthWindow,
-  resolveGlobalPreset,
-} from '../../../src/utils/wisersite/date-window';
+import { resolveGlobalPreset } from '../../../src/utils/wisersite/date-window';
 
 /**
  * WP23-159 — Source to Hire > Show Source Performance Breakdown (excl. cost per hire).
@@ -39,10 +35,8 @@ import {
  * no source with 0 applications.
  *
  * AC 1 lists the widget's own periods with the same labels as the global picker, so each one
- * is expected to cover the same window as the global preset of that name. The app starts its
- * own "Last 3/6/12 months" on the 1st of a calendar month instead: suspected new defect, not
- * yet in KNOWN-DEFECTS.md, so those tests fail until it is logged or the PO accepts calendar
- * months (docs/test-plans/WP23-62.md D-3).
+ * covers the same window as the global preset of that name (PO 2026-10-21, WP23-419; the old
+ * calendar-month behaviour, BIZ-1014 D-1, is fixed).
  */
 
 /** The widget's own periods other than "Match Global", paired with the preset they mirror. */
@@ -73,7 +67,7 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
       const widget = sourceToHirePage.sourcePerformance;
       await sourceToHirePage.summary.waitForLoaded();
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
-      const window = await sourceToHirePage.dateRange.getActiveRange();
+      const window = resolveGlobalPreset('Last 12 months');
       const expected = expectedSourcePerformanceRows(
         await sourceToHireRepository.getBySource(window.startDate, window.endDate),
       );
@@ -133,7 +127,7 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
         const sortValue = SOURCE_PERFORMANCE_SORT_VALUE[column];
         await sourceToHirePage.summary.waitForLoaded();
         await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
-        const { startDate, endDate } = await sourceToHirePage.dateRange.getActiveRange();
+        const { startDate, endDate } = resolveGlobalPreset('Last 12 months');
         const expected = expectedSourcePerformanceRows(
           await sourceToHireRepository.getBySource(startDate, endDate),
         );
@@ -182,7 +176,7 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
         const widget = sourceToHirePage.sourcePerformance;
         await sourceToHirePage.summary.waitForLoaded();
         await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
-        const globalRange = await sourceToHirePage.dateRange.getActiveRange();
+        const globalRange = resolveGlobalPreset('Last 12 months');
         const globalSummary = await sourceToHireRepository.getSummary(
           globalRange.startDate,
           globalRange.endDate,
@@ -191,6 +185,7 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
           (await sourceToHireRepository.getBySource(globalRange.startDate, globalRange.endDate))
             .length > 0;
 
+        const buttonBefore = await sourceToHirePage.dateRange.getActiveRange();
         const localWindow = resolveGlobalPreset(preset);
         const expected = expectedSourcePerformanceRows(
           await sourceToHireRepository.getBySource(localWindow.startDate, localWindow.endDate),
@@ -205,20 +200,10 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
 
         await widget.setTimePeriod(value);
 
-        // The widget asked the server for exactly the window the ticket describes. If it asked
-        // for the calendar-month window instead, that is suspected defect QA-WP23-62-1: label and
-        // rethrow. Any other mismatch fails unlabelled.
-        try {
-          await expect
-            .poll(() => widgetRequests.last('sourcePerformanceBreakdown'))
-            .toEqual(localWindow);
-        } catch (error) {
-          const requested = widgetRequests.last('sourcePerformanceBreakdown');
-          if (widgetMonthPresetDefectApplies(preset, localWindow, requested)) {
-            markSuspectedDefect(SUSPECTED_DEFECTS.widgetMonthPresets);
-          }
-          throw error;
-        }
+        // The widget asked the server for exactly the window the ticket describes.
+        await expect
+          .poll(() => widgetRequests.last('sourcePerformanceBreakdown'))
+          .toEqual(localWindow);
         if (expected.length === 0) {
           await expect(widget.emptyState).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
         } else {
@@ -229,7 +214,7 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
 
         // Contained: the global filter, the KPI row and Applications by Source stay on the global window.
         const { summary } = sourceToHirePage;
-        expect(await sourceToHirePage.dateRange.getActiveRange()).toEqual(globalRange);
+        expect(await sourceToHirePage.dateRange.getActiveRange()).toEqual(buttonBefore);
         await expect(summary.applications.value).toHaveText(
           formatLocaleCount(globalSummary.applications),
         );
@@ -256,11 +241,9 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
       await expect(widget.timePeriodSelect).toHaveValue('last-30-days');
 
       await sourceToHirePage.selectGlobalDatePreset('Last 6 months');
-      const globalRange = await sourceToHirePage.dateRange.getActiveRange();
+      const globalRange = resolveGlobalPreset('Last 6 months');
       await expect(widget.timePeriodSelect).toHaveValue('match-global');
-      await expect
-        .poll(() => widgetRequests.last('sourcePerformanceBreakdown'))
-        .toEqual(globalRange);
+      await widgetRequests.waitForWindow('sourcePerformanceBreakdown', globalRange);
 
       const expected = expectedSourcePerformanceRows(
         await sourceToHireRepository.getBySource(globalRange.startDate, globalRange.endDate),
@@ -286,7 +269,7 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
       const { sourcePerformance, applicationsBySource } = sourceToHirePage;
       await sourceToHirePage.summary.waitForLoaded();
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
-      const { startDate, endDate } = await sourceToHirePage.dateRange.getActiveRange();
+      const { startDate, endDate } = resolveGlobalPreset('Last 12 months');
       const bySource = await sourceToHireRepository.getBySource(startDate, endDate);
       test.skip(bySource.length === 0, 'No applications in the last 12 months.');
       // Wait for both widgets to show the 12-month data: the previous preset's rows stay on
@@ -331,11 +314,8 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
       // Both widgets on "Match Global Date Picker", so they cover the same period.
       const expectedTrend = expectedHiresTrendTable({
-        rows: await hiresTrendRepository.getMonthlyHiresBySource(),
-        window: hiresTrendMonthWindow(
-          'match-global',
-          await sourceToHirePage.dateRange.getActiveRange(),
-        ),
+        rows: await hiresTrendRepository.getDailyHiresBySource(),
+        window: resolveGlobalPreset('Last 12 months'),
         comparisonMonths: null,
       });
       test.skip(
@@ -344,7 +324,7 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
       );
 
       // Wait for both widgets to show the 12-month data, not the previous preset's.
-      const { startDate, endDate } = await sourceToHirePage.dateRange.getActiveRange();
+      const { startDate, endDate } = resolveGlobalPreset('Last 12 months');
       await expect
         .poll(async () => rowsBySource(await sourcePerformance.readRows()), {
           timeout: WIDGET_TIMEOUT_MS,
@@ -359,10 +339,14 @@ test.describe('WP23-159 Source Performance Breakdown', () => {
       await expect
         .poll(() => hiresTrend.readTable(), { timeout: WIDGET_TIMEOUT_MS })
         .toEqual(expectedTrend);
-      const table = await sourcePerformance.readRows();
-      expect(new Set(table.slice(0, 6).map((row) => row.source))).toEqual(
-        new Set(plottedSources(expectedTrend!)),
-      );
+      // Both widgets match the warehouse (checked above), so any difference here is the two
+      // rankings disagreeing: applications for the table, hires for the chart (D-7).
+      const tableTop6 = (await sourcePerformance.readRows()).slice(0, 6).map((row) => row.source);
+      const trendSources = plottedSources(expectedTrend!);
+      if (!sameMembers(tableTop6, trendSources)) {
+        markSuspectedDefect(SUSPECTED_DEFECTS.topSixRankingsDiffer);
+      }
+      expect(new Set(tableTop6)).toEqual(new Set(trendSources));
     },
   );
 });

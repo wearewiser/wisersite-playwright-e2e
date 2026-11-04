@@ -13,3 +13,10 @@ export function isSorted(values: readonly (number | string)[], direction: 'asc' 
     return direction === 'desc' ? cmp >= 0 : cmp <= 0;
   });
 }
+
+/** Whether `a` and `b` hold the same distinct values, in any order. */
+export function sameMembers<T>(a: readonly T[], b: readonly T[]): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((value) => right.has(value));
+}

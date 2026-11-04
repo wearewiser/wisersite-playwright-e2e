@@ -15,6 +15,7 @@
     "test:tz:utc": "TZ=UTC TEST_TZ=UTC playwright test -c playwright.wisersite.config.ts --project=chromium",
     "test:tz:london": "TZ=Europe/London TEST_TZ=Europe/London playwright test -c playwright.wisersite.config.ts --project=chromium",
     "test:tz:auckland": "TZ=Pacific/Auckland TEST_TZ=Pacific/Auckland playwright test -c playwright.wisersite.config.ts --project=chromium",
+    "test:tz:offday": "node .claude/skills/stabilize-e2e-tests/scripts/run-offday-tz.cjs",
     "test:ui": "playwright test -c playwright.wisersite.config.ts --ui",
     "test:debug": "playwright test -c playwright.wisersite.config.ts --debug",
     "test:report": "playwright show-report playwright-report-wisersite",

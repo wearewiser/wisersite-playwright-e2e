@@ -1,19 +1,46 @@
-import type { HiresTrendRow } from '../../db/repositories/wisersite/hires-trend.repository.types';
-import type { HiresByMonthTable } from '../../types/wisersite/source-to-hire.types';
-import { monthsInRange, nthMonthDate } from '../../utils/wisersite/date-window';
+import type { HiresTrendDayRow } from '../../db/repositories/wisersite/hires-trend.repository.types';
+import type {
+  DateWindow,
+  HiresByMonthTable,
+  MonthBucket,
+} from '../../types/wisersite/source-to-hire.types';
+import {
+  groupByMonthBucket,
+  monthBuckets,
+  monthOf,
+  priorMonthBuckets,
+} from '../../utils/wisersite/date-window';
 
 const PRIOR_SUFFIX = ' (prior)';
+
+/** Hires per source in each bucket; a source with no applications in a bucket is absent. */
+function hiresBySourcePerBucket(
+  rows: readonly HiresTrendDayRow[],
+  buckets: readonly MonthBucket[],
+): Map<string, number>[] {
+  return groupByMonthBucket(rows, buckets).map((bucketRows) => {
+    const bySource = new Map<string, number>();
+    for (const row of bucketRows) {
+      bySource.set(row.sourceChannel, (bySource.get(row.sourceChannel) ?? 0) + row.hires);
+    }
+    return bySource;
+  });
+}
 
 /**
  * Independent oracle for the Hires Trend by Source chart (WP23-158), written from the ticket
  * rather than imported from the plugin:
  *
- * - plots the top 6 sources by hires within the plotted months (sources with no hires there
- *   are not plotted; ties break alphabetically);
+ * - one point per month `window` touches, each counting only the window's days in that month
+ *   (WP23-419 D-1, fixed b31efaa);
+ * - plots the top 6 sources by hires within the window (sources with no hires there are not
+ *   plotted; ties break alphabetically);
  * - a month/source with no applications at all is a gap ("No data"), not a 0;
- * - a comparison adds one `"<source> (prior)"` series per plotted source, each month reading
- *   the value `offset` months earlier — unless the prior window starts before the earliest
- *   month of history, or every prior point is a gap (AC 5: no comparison line).
+ * - a comparison adds one `"<source> (prior)"` series per plotted source, each month reading the
+ *   same days `comparisonMonths` earlier (`priorMonthBuckets`) — unless the prior window starts
+ *   in a month before the earliest month of the chart's data, or every prior point is a gap
+ *   (AC 5: no comparison line). A source whose own prior points are all gaps gets no prior
+ *   column.
  *
  * Returns the chart's accessible table shape: `{ [month]: { [seriesLabel]: hires | null } }`,
  * or `null` when the chart should show its "No data for this period" empty state.
@@ -24,20 +51,19 @@ export function expectedHiresTrendTable({
   comparisonMonths,
   topN = 6,
 }: {
-  /** The chart's whole 36-month payload (see `HiresTrendRepository`). */
-  rows: HiresTrendRow[];
-  window: { startMonth: string; endMonth: string };
+  /** The chart's whole payload (see `HiresTrendRepository`). */
+  rows: HiresTrendDayRow[];
+  window: DateWindow;
   /** `null` for "No comparison". */
   comparisonMonths: 3 | 6 | 12 | null;
   topN?: number;
 }): HiresByMonthTable | null {
-  const months = monthsInRange(window.startMonth, window.endMonth);
-  const lookup = new Map(rows.map((row) => [`${row.month}|${row.sourceChannel}`, row.hires]));
+  const buckets = monthBuckets(window);
+  const byBucket = hiresBySourcePerBucket(rows, buckets);
 
   const totals = new Map<string, number>();
-  for (const row of rows) {
-    if (!months.includes(row.month)) continue;
-    totals.set(row.sourceChannel, (totals.get(row.sourceChannel) ?? 0) + row.hires);
+  for (const bySource of byBucket) {
+    for (const [source, hires] of bySource) totals.set(source, (totals.get(source) ?? 0) + hires);
   }
   const top = [...totals.entries()]
     .filter(([, hires]) => hires > 0)
@@ -47,34 +73,39 @@ export function expectedHiresTrendTable({
   if (top.length === 0) return null;
 
   const table: HiresByMonthTable = {};
-  for (const month of months) {
-    table[month] = Object.fromEntries(
-      top.map((source) => [source, lookup.get(`${month}|${source}`) ?? null]),
+  buckets.forEach((bucket, index) => {
+    table[bucket.month] = Object.fromEntries(
+      top.map((source) => [source, byBucket[index]!.get(source) ?? null]),
     );
-  }
+  });
 
   if (comparisonMonths != null) {
-    const earliest = rows.reduce<string | null>(
-      (min, row) => (!min || row.month < min ? row.month : min),
+    const priorBuckets = priorMonthBuckets(window, comparisonMonths);
+    const earliestMonth = rows.reduce<string | null>(
+      (min, row) => (!min || monthOf(row.day) < min ? monthOf(row.day) : min),
       null,
     );
-    const priorStart = nthMonthDate(window.startMonth, -comparisonMonths);
-    const priorStartsBeforeHistory = earliest !== null && priorStart < earliest;
+    const priorStartsBeforeHistory =
+      earliestMonth !== null && priorBuckets[0]!.month < earliestMonth;
     if (!priorStartsBeforeHistory) {
-      const prior: HiresByMonthTable = {};
-      let anyPrior = false;
-      for (const month of months) {
-        const priorMonth = nthMonthDate(month, -comparisonMonths);
-        prior[month] = Object.fromEntries(
-          top.map((source) => {
-            const value = lookup.get(`${priorMonth}|${source}`) ?? null;
-            if (value !== null) anyPrior = true;
-            return [`${source}${PRIOR_SUFFIX}`, value];
-          }),
-        );
-      }
-      if (anyPrior) {
-        for (const month of months) table[month] = { ...table[month], ...prior[month] };
+      const priorByBucket = hiresBySourcePerBucket(rows, priorBuckets);
+      // A prior line with no point at all isn't drawn or listed (AC silent: per app
+      // `LineGraph.tsx:222-224`, which keeps only series with a value).
+      const withPrior = top.filter((source) =>
+        priorByBucket.some((bySource) => bySource.has(source)),
+      );
+      if (withPrior.length > 0) {
+        buckets.forEach((bucket, index) => {
+          table[bucket.month] = {
+            ...table[bucket.month],
+            ...Object.fromEntries(
+              withPrior.map((source) => [
+                `${source}${PRIOR_SUFFIX}`,
+                priorByBucket[index]!.get(source) ?? null,
+              ]),
+            ),
+          };
+        });
       }
     }
   }

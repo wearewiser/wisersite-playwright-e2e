@@ -1,53 +1,40 @@
 import type { TenantSqlClient } from '../../wisersite-db-client';
-import type { HiresTrendRawRow, HiresTrendRow } from './hires-trend.repository.types';
+import type { HiresTrendDayRow } from './hires-trend.repository.types';
 
 const ATS_APPLICATIONS_TABLE = '"analytics"."gold_fct_ats_applications"';
 
 /**
- * Independent read path for the "Hires Trend by Source" chart. Unlike every other widget on
- * this page, the app's own `hiresTrendBySourceWidget.handle` does NOT forward the date-picker's
- * startDate/endDate to `getHiresTrendBySource` — it always fetches a fixed trailing 36 months
- * from `CURRENT_DATE` and the date picker only changes which months the chart *displays* out of
- * that fetch. This repository mirrors that fixed window rather than taking a date range, so a
- * test can filter/compare against whichever months are actually visible.
+ * Independent read path for the "Hires Trend by Source" chart. The chart doesn't fetch the
+ * date picker's window: it loads a fixed span (from the 1st of the month 25 months back) and
+ * picks the days it plots from that, so the earliest day here is also the chart's history
+ * floor for a comparison (AC silent: per app `getHiresTrendBySource`). This repository mirrors
+ * that span rather than taking a date range. Internal applications count (WP23-417:
+ * "applications" means all applications, Hires Trend included).
+ *
+ * One row per day and source with any application, so a source with applications but no hires
+ * in a month is a 0, and one with no applications a gap.
  */
 export class HiresTrendRepository {
   constructor(private readonly db: TenantSqlClient) {}
 
-  async getMonthlyHiresBySource(): Promise<HiresTrendRow[]> {
-    const rows = await this.db.query<HiresTrendRawRow>(
+  async getDailyHiresBySource(): Promise<HiresTrendDayRow[]> {
+    const rows = await this.db.query<{ day: string; source_channel: string; hires: number }>(
       `SELECT
-         date_trunc('month', application_created_date)::date AS month,
+         to_char(application_created_date, 'YYYY-MM-DD') AS day,
          source_channel,
          COUNT(*) FILTER (WHERE is_hired)::int AS hires
        FROM ${ATS_APPLICATIONS_TABLE}
-       WHERE application_created_date >= (CURRENT_DATE - INTERVAL '36 months')
+       WHERE application_created_date >= (date_trunc('month', CURRENT_DATE) - INTERVAL '25 months')::date
          AND NOT is_deleted
-         AND NOT internal_application
          AND source_channel IS NOT NULL
          AND source_channel <> ''
-       GROUP BY month, source_channel
-       ORDER BY month, source_channel`,
+       GROUP BY application_created_date, source_channel
+       ORDER BY application_created_date, source_channel`,
     );
     return rows.map((row) => ({
-      month: this.coerceMonth(row.month),
+      day: row.day,
       sourceChannel: row.source_channel,
       hires: Number(row.hires),
     }));
-  }
-
-  /**
-   * oracle-ok: database type parsing, no ticket rule. `pg`'s default type parser returns a `date` column as a
-   * JS `Date` (parsed at UTC midnight, per `pg-types`), not a string — reading `row.month` as a
-   * string here would silently produce garbage keys (e.g. via `Date.prototype.toString()`) that
-   * never match a real `YYYY-MM-01`.
-   */
-  private coerceMonth(value: unknown): string {
-    if (value instanceof Date) {
-      const year = value.getUTCFullYear();
-      const month = String(value.getUTCMonth() + 1).padStart(2, '0');
-      return `${year}-${month}-01`;
-    }
-    return `${String(value).slice(0, 7)}-01`;
   }
 }

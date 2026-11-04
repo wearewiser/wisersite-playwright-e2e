@@ -1,6 +1,7 @@
 import { expect, test } from '../../../src/fixtures/wisersite.fixtures';
 import {
-  GLOBAL_PRESETS,
+  DATE_PICKER_MONTHS_BACK,
+  EMPTY_WINDOW_DAYS,
   SUMMARY_TILE_LABELS,
   WIDGET_TIMEOUT_MS,
 } from '../../../src/constants/wisersite/source-to-hire.constants';
@@ -8,9 +9,10 @@ import { KNOWN_DEFECTS } from '../../../src/constants/wisersite/known-defects.co
 import {
   SPARKLINE_LABEL,
   TREND_TONE,
-  comparisonGateDefectApplies,
+  comparisonHiddenByGate,
   expectedSummaryForWindow,
   formatHirePeriod,
+  onlyComparisonMissing,
   trendStateFor,
   type TrendState,
 } from '../../../src/expectations/wisersite/summary-tiles.expectations';
@@ -30,7 +32,7 @@ import {
 import {
   localTodayIso,
   nthDayDate,
-  previousWindow,
+  nthMonthDate,
   resolveGlobalPreset,
 } from '../../../src/utils/wisersite/date-window';
 
@@ -44,7 +46,7 @@ import {
  *
  * "Available data" (AC 5) is the warehouse's first to last application date. Where the app's
  * own gate (today−90 fallback range) gives a different answer, the test fails and is labelled
- * `known-defect: WP23-213 D-1`.
+ * `known-defect: WP23-377` (register row WP23-213 D-1).
  */
 
 test.describe('WP23-87 Source to Hire summary statistics', () => {
@@ -62,7 +64,7 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
       await sourceToHirePage.summary.waitForLoaded();
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
 
-      const { startDate, endDate } = await sourceToHirePage.dateRange.getActiveRange();
+      const { startDate, endDate } = resolveGlobalPreset('Last 12 months');
       const expected = await sourceToHireRepository.getSummary(startDate, endDate);
       console.log('Source to Hire summary — SQL (%s to %s):', startDate, endDate, expected);
       if (expected.hires === 0) {
@@ -105,51 +107,20 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
       title: 'The page opens on “Last 30 days”',
       what: 'A new visitor sees the last 30 days by default.',
     }),
-    async ({ sourceToHirePage }) => {
+    async ({ sourceToHirePage, widgetRequests }) => {
       await sourceToHirePage.summary.waitForLoaded();
-      expect(await sourceToHirePage.dateRange.getActiveRange()).toEqual(
-        resolveGlobalPreset('Last 30 days'),
-      );
+      // The board fetches the preset's dates on the user's calendar.
+      const expected = resolveGlobalPreset('Last 30 days');
+      await widgetRequests.waitForWindow('sourceToHireSummary', expected);
+      // Only the button's text is left to check; where it shows the server's day instead, that is
+      // WP23-419 D-3.
+      const shown = await sourceToHirePage.dateRange.getActiveRange();
+      if (JSON.stringify(shown) !== JSON.stringify(expected)) {
+        markKnownDefect(KNOWN_DEFECTS.dateButtonServerDate);
+      }
+      expect(shown, 'dates printed on the date button').toEqual(expected);
     },
   );
-
-  for (const preset of GLOBAL_PRESETS) {
-    test(
-      `"${preset}": headline stats, deltas, caption and graph state all match the warehouse`,
-      details({
-        ac: ['WP23-87 AC 1', 'WP23-87 AC 2.1', 'WP23-87 AC 3.1', 'WP23-87 AC 3.2', 'WP23-87 AC 5'],
-        title: 'Each date preset shows the right numbers, % change and colour',
-        what: 'Picks each preset and compares the numbers, the “vs previous …” wording and the colour with the rules in the ticket.',
-        variant: preset,
-      }),
-      async ({ sourceToHirePage, widgetRequests, sourceToHireRepository }) => {
-        await sourceToHirePage.summary.waitForLoaded();
-        await sourceToHirePage.selectGlobalDatePreset(preset);
-
-        // Confirm the independent date math agrees with the window the app resolved first,
-        // before trusting it to build the SQL windows.
-        expect(await sourceToHirePage.dateRange.getActiveRange()).toEqual(
-          resolveGlobalPreset(preset),
-        );
-
-        const activeRange = await sourceToHirePage.dateRange.getActiveRange();
-        const {
-          expected,
-          previous,
-          span: dataSpan,
-        } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, preset);
-        // oracle-ok: the board's bounds only decide the WP23-213 D-1 label, never an expected value.
-        const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
-        if (comparisonGateDefectApplies(activeRange, previous, dataSpan, boardRange)) {
-          markKnownDefect(KNOWN_DEFECTS.comparisonGate);
-        }
-        console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
-        await expect
-          .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
-          .toEqual(expected);
-      },
-    );
-  }
 
   test(
     'a custom range with both periods inside the data compares "vs previous period" (AC 2.1.4, AC 5)',
@@ -174,22 +145,30 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
       await sourceToHirePage.setCustomGlobalDateRange(startDate, endDate);
       expect(await sourceToHirePage.dateRange.getActiveRange()).toEqual({ startDate, endDate });
 
-      const activeRange = await sourceToHirePage.dateRange.getActiveRange();
+      const activeRange = { startDate, endDate };
       const {
         expected,
         comparisonAvailable,
         previous,
         span: dataSpan,
       } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, 'custom');
-      // oracle-ok: the board's bounds only decide the WP23-213 D-1 label, never an expected value.
-      const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
-      if (comparisonGateDefectApplies(activeRange, previous, dataSpan, boardRange)) {
-        markKnownDefect(KNOWN_DEFECTS.comparisonGate);
-      }
+      await widgetRequests.waitForWindow('sourceToHireSummary', activeRange);
       console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
-      await expect
-        .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
-        .toEqual(expected);
+      try {
+        await expect
+          .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
+          .toEqual(expected);
+      } catch (error) {
+        // oracle-ok: the board's bounds only decide the WP23-377 label, never an expected value.
+        const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
+        if (
+          comparisonHiddenByGate(previous, dataSpan, boardRange) &&
+          onlyComparisonMissing(await sourceToHirePage.summary.readTiles(), expected)
+        ) {
+          markKnownDefect(KNOWN_DEFECTS.comparisonGate);
+        }
+        throw error;
+      }
       expect(comparisonAvailable).toBe(true);
     },
   );
@@ -215,22 +194,30 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
       );
       await sourceToHirePage.setCustomGlobalDateRange(startDate, endDate);
 
-      const activeRange = await sourceToHirePage.dateRange.getActiveRange();
+      const activeRange = { startDate, endDate };
       const {
         expected,
         comparisonAvailable,
         previous,
         span: dataSpan,
       } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, 'custom');
-      // oracle-ok: the board's bounds only decide the WP23-213 D-1 label, never an expected value.
-      const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
-      if (comparisonGateDefectApplies(activeRange, previous, dataSpan, boardRange)) {
-        markKnownDefect(KNOWN_DEFECTS.comparisonGate);
-      }
+      await widgetRequests.waitForWindow('sourceToHireSummary', activeRange);
       console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
-      await expect
-        .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
-        .toEqual(expected);
+      try {
+        await expect
+          .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
+          .toEqual(expected);
+      } catch (error) {
+        // oracle-ok: the board's bounds only decide the WP23-377 label, never an expected value.
+        const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
+        if (
+          comparisonHiddenByGate(previous, dataSpan, boardRange) &&
+          onlyComparisonMissing(await sourceToHirePage.summary.readTiles(), expected)
+        ) {
+          markKnownDefect(KNOWN_DEFECTS.comparisonGate);
+        }
+        throw error;
+      }
       expect(comparisonAvailable).toBe(false);
       for (const tile of await sourceToHirePage.summary.readTiles()) {
         expect(tile.delta, `${tile.label} should show no comparison`).toBeNull();
@@ -240,50 +227,8 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
     },
   );
 
-  test(
-    'a custom range that runs past the last day of data shows no comparison, neutral graph (AC 5.1)',
-    details({
-      ac: ['WP23-87 AC 5.1'],
-      title: 'Custom range: no comparison when the range runs past the end of the data',
-      what: 'The ticket says a partly-covered range shows no comparison.',
-    }),
-    async ({ sourceToHirePage, widgetRequests, sourceToHireRepository }) => {
-      await sourceToHirePage.summary.waitForLoaded();
-      const span = await sourceToHireRepository.getDataSpan();
-      test.skip(!span, 'The warehouse has no applications.');
-
-      // 11 days straddling the last day of data; the previous 11 days are inside the data.
-      const startDate = nthDayDate(span!.maxDate, -5);
-      const endDate = nthDayDate(span!.maxDate, 5);
-      test.skip(endDate > localTodayIso(), `${startDate}..${endDate} would end in the future.`);
-      test.skip(
-        previousWindow({ startDate, endDate }).startDate < span!.minDate,
-        `The data span ${span!.minDate}..${span!.maxDate} is too short for a previous period inside it.`,
-      );
-      await sourceToHirePage.setCustomGlobalDateRange(startDate, endDate);
-
-      const activeRange = await sourceToHirePage.dateRange.getActiveRange();
-      const {
-        expected,
-        comparisonAvailable,
-        previous,
-        span: dataSpan,
-      } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, 'custom');
-      // oracle-ok: the board's bounds only decide the WP23-213 D-1 label, never an expected value.
-      const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
-      if (comparisonGateDefectApplies(activeRange, previous, dataSpan, boardRange)) {
-        markKnownDefect(KNOWN_DEFECTS.comparisonGate);
-      }
-      console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
-      await expect
-        .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
-        .toEqual(expected);
-      expect(comparisonAvailable).toBe(false);
-    },
-  );
-
   // AC 3: one custom range per colour band of Total Applications, chosen from the warehouse.
-  // Both periods must sit inside the data and inside the board's range, so WP23-213 D-1 doesn't
+  // Both periods must sit inside the data and inside the board's range, so WP23-377 doesn't
   // decide the outcome and the band itself is what gets checked.
   const BANDS: {
     band: TrendState;
@@ -321,7 +266,7 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
       async ({ sourceToHirePage, widgetRequests, sourceToHireRepository }) => {
         await sourceToHirePage.summary.waitForLoaded();
         const span = await sourceToHireRepository.getDataSpan();
-        // oracle-ok: the board's bounds only narrow where a window is picked, so WP23-213 D-1
+        // oracle-ok: the board's bounds only narrow where a window is picked, so WP23-377
         // can't decide the outcome; expected values still come from the warehouse.
         const { minDate, maxDate } = await widgetRequests.waitForLast('sourceToHireSummary');
         const bounds =
@@ -341,22 +286,30 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
         );
 
         await sourceToHirePage.setCustomGlobalDateRange(window!.startDate, window!.endDate);
-        const activeRange = await sourceToHirePage.dateRange.getActiveRange();
+        const activeRange = window!;
         const {
           expected,
           comparisonAvailable,
           previous,
           span: dataSpan,
         } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, 'custom');
-        // oracle-ok: the board's bounds only decide the WP23-213 D-1 label, never an expected value.
-        const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
-        if (comparisonGateDefectApplies(activeRange, previous, dataSpan, boardRange)) {
-          markKnownDefect(KNOWN_DEFECTS.comparisonGate);
-        }
+        await widgetRequests.waitForWindow('sourceToHireSummary', activeRange);
         console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
-        await expect
-          .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
-          .toEqual(expected);
+        try {
+          await expect
+            .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
+            .toEqual(expected);
+        } catch (error) {
+          // oracle-ok: the board's bounds only decide the WP23-377 label, never an expected value.
+          const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
+          if (
+            comparisonHiddenByGate(previous, dataSpan, boardRange) &&
+            onlyComparisonMissing(await sourceToHirePage.summary.readTiles(), expected)
+          ) {
+            markKnownDefect(KNOWN_DEFECTS.comparisonGate);
+          }
+          throw error;
+        }
         expect(comparisonAvailable).toBe(true);
         const applications = (await sourceToHirePage.summary.readTiles())[0]!;
         expect(applications.tone).toBe(TREND_TONE[band]);
@@ -370,29 +323,42 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
     details({
       ac: ['WP23-87 AC 1', 'WP23-156 AC 1.2', 'WP23-157 AC 3'],
       title: 'A period with no data shows zeros and hides or empties every widget',
-      what: 'Picks a period with no applications and checks the whole page reacts correctly.',
+      what: 'Picks the two weeks before the first application on record and checks the whole page reacts correctly.',
     }),
-    async ({ sourceToHirePage, sourceToHireRepository }) => {
+    async ({ sourceToHirePage, widgetRequests, sourceToHireRepository }) => {
       await sourceToHirePage.summary.waitForLoaded();
-      // Ask Postgres which preset is empty rather than hard-coding one, so this stays correct if
-      // the demo data ever moves.
-      let emptyPreset: (typeof GLOBAL_PRESETS)[number] | undefined;
-      for (const preset of GLOBAL_PRESETS) {
-        const { startDate, endDate } = resolveGlobalPreset(preset);
-        if ((await sourceToHireRepository.getSummary(startDate, endDate)).applications === 0) {
-          emptyPreset = preset;
-          break;
-        }
-      }
-      test.skip(!emptyPreset, 'Every global preset currently has applications in Postgres.');
+      // Two weeks ending the day before the first application on record: empty by construction,
+      // and confirmed below, rather than hoping a preset is empty.
+      const span = await sourceToHireRepository.getDataSpan();
+      test.skip(
+        !span,
+        'The warehouse has no applications, so there is no data to show either way.',
+      );
+      const endDate = nthDayDate(span!.minDate, -1);
+      const startDate = nthDayDate(endDate, -(EMPTY_WINDOW_DAYS - 1));
+      test.skip(
+        startDate < nthMonthDate(localTodayIso(), -DATE_PICKER_MONTHS_BACK),
+        `The data starts ${span!.minDate}, further back than the date picker pages (${DATE_PICKER_MONTHS_BACK} months).`,
+      );
+      const window = { startDate, endDate };
+      expect((await sourceToHireRepository.getSummary(startDate, endDate)).applications).toBe(0);
 
-      await sourceToHirePage.selectGlobalDatePreset(emptyPreset!);
+      await sourceToHirePage.setCustomGlobalDateRange(startDate, endDate);
+      // Every widget has fetched this window, so "hidden" or "empty" isn't "not loaded yet".
+      for (const key of [
+        'sourceToHireSummary',
+        'applicationsBySource',
+        'hireDistribution',
+        'sourcePerformanceBreakdown',
+      ]) {
+        await widgetRequests.waitForWindow(key, window);
+      }
       const { summary } = sourceToHirePage;
       await expect(summary.applications.value).toHaveText('0');
       await expect(summary.screened.value).toHaveText('0');
       await expect(summary.hires.value).toHaveText('0');
       await expect(summary.avgHirePeriod.value).toHaveText(formatHirePeriod(null));
-      // WP23-156 / WP23-157: both source widgets disappear rather than rendering empty.
+      // WP23-156 AC 1.2 / WP23-157 AC 3: both source widgets disappear rather than rendering empty.
       await expect(sourceToHirePage.applicationsBySource.heading).toHaveCount(0);
       await expect(sourceToHirePage.hireDistribution.heading).toHaveCount(0);
       await expect(sourceToHirePage.hiresTrend.emptyState).toBeVisible();

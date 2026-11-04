@@ -27,25 +27,28 @@ test.describe('WP23-156 Applications by Source', () => {
     test(
       `"${preset}": top 6 sources, applicant counts and hire rates match the warehouse`,
       details({
-        ac: ['WP23-156 AC 1.1.1', 'WP23-156 AC 1.1.2', 'WP23-156 AC 1.1.3', 'WP23-156 AC 1.2'],
+        ac: ['WP23-156 AC 1.1.1', 'WP23-156 AC 1.1.2', 'WP23-156 AC 1.1.3'],
         title: 'Top 6 sources, applicant counts and hire rates match the database',
-        what: 'Checked for every date preset. With no data, the widget must be hidden.',
+        what: 'Checked for every date preset.',
         variant: preset,
       }),
-      async ({ sourceToHirePage, sourceToHireRepository }) => {
+      async ({ sourceToHirePage, widgetRequests, sourceToHireRepository }) => {
         const widget = sourceToHirePage.applicationsBySource;
         await sourceToHirePage.summary.waitForLoaded();
         await sourceToHirePage.selectGlobalDatePreset(preset);
 
-        const window = await sourceToHirePage.dateRange.getActiveRange();
-        expect(window).toEqual(resolveGlobalPreset(preset));
+        // The preset's dates on the user's calendar; the date button can show the server's
+        // (WP23-419 D-3), so the window comes from the preset and the request proves it applied.
+        const window = resolveGlobalPreset(preset);
+        await widgetRequests.waitForWindow('applicationsBySource', window);
         const expected = expectedApplicationsBySourceRows(
           await sourceToHireRepository.getBySource(window.startDate, window.endDate),
         );
         console.log('Applications by Source %o — SQL top 6:', window, expected);
 
         if (expected.length === 0) {
-          // AC 1.2: no data -> the widget is not displayed at all (no empty card either).
+          // No data: the widget hides (AC 1.2, asserted by the summary spec's empty-window test).
+          markLimitedByData('No applications in this window: only the hidden widget was checked.');
           await expect(widget.heading).toHaveCount(0);
           return;
         }
@@ -72,7 +75,7 @@ test.describe('WP23-156 Applications by Source', () => {
       const widget = sourceToHirePage.applicationsBySource;
       await sourceToHirePage.summary.waitForLoaded();
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
-      const { startDate, endDate } = await sourceToHirePage.dateRange.getActiveRange();
+      const { startDate, endDate } = resolveGlobalPreset('Last 12 months');
       const expected = topSourcesByApplications(
         await sourceToHireRepository.getBySource(startDate, endDate),
       );
@@ -136,7 +139,7 @@ test.describe('WP23-156 Applications by Source', () => {
       const widget = sourceToHirePage.applicationsBySource;
       await sourceToHirePage.summary.waitForLoaded();
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
-      const twelveMonths = await sourceToHirePage.dateRange.getActiveRange();
+      const twelveMonths = resolveGlobalPreset('Last 12 months');
       test.skip(
         (await sourceToHireRepository.getBySource(twelveMonths.startDate, twelveMonths.endDate))
           .length === 0,
@@ -145,8 +148,8 @@ test.describe('WP23-156 Applications by Source', () => {
       await widget.waitForRows();
 
       await sourceToHirePage.selectGlobalDatePreset('Last 3 months');
-      const threeMonths = await sourceToHirePage.dateRange.getActiveRange();
-      await expect.poll(() => widgetRequests.last('applicationsBySource')).toEqual(threeMonths);
+      const threeMonths = resolveGlobalPreset('Last 3 months');
+      await widgetRequests.waitForWindow('applicationsBySource', threeMonths);
 
       const expected = expectedApplicationsBySourceRows(
         await sourceToHireRepository.getBySource(threeMonths.startDate, threeMonths.endDate),

@@ -36,6 +36,12 @@ data that really exists.
   it names, carry on where you can, and put the open question at the top of the final report.
 - Run every Bash command from this repo's root and use subshells (`(cd ../x && ...)`) for
   work elsewhere, so relative paths like `node .claude/skills/...` keep working.
+- When a decision changes how the repo works (what's gitignored, where specs live, a
+  locator or labelling rule), update every skill, agent, README and CLAUDE.md line that
+  states the old rule **in the same change**: `grep -rn '<old rule>' .claude README.md
+  CLAUDE.md`. Docs that contradict the code are a code-review finding.
+- Fixing review comments: fix the pattern, not the line. Grep for every other instance of
+  what the reviewer cited, fix them all, and list the extra places.
 
 ## Workflow — each phase uses one skill; don't skip phases
 
@@ -63,16 +69,23 @@ data that really exists.
    Every test drives the UI as a user would (no browser-free tests); edge values today's data
    can't reach go in the plan's Not tested section. Every test declares
    `details({ ac, title, what, variant })`;
-   empty-state-only paths call `markLimitedByData()`; known / suspected defects are labelled,
-   never `test.fail()`. `check-oracle-independence.cjs --strict` must pass.
+   empty-state-only paths call `markLimitedByData()`; known / suspected defects are labelled
+   (known ones by Jira key, mapped in `KNOWN_DEFECT_REGISTER_ROWS` when the register uses
+   another ID), never `test.fail()`. No performance/timing tests; accepted defects aren't
+   tested. `check-oracle-independence.cjs --strict` must pass.
 7. **Run and stabilise** — `stabilize-e2e-tests`. Environment check, typecheck, lint, oracle
    and defect-label checks, run the specs, fix test bugs, rerun flaky specs with
    `--repeat-each=3`, timezone runs for date-sensitive specs. Classify every remaining failure
    as test bug / app defect / data limitation / environment — never "fix" a test by weakening
    it to match a defect.
-8. **Self-review** — load `qa-review-report` and run its checklist (A–E) against your own work,
-   using `ac-coverage.cjs` on a fresh `npm run test:headed:retry` JSON run. Fix every blocker
-   and major you find, rerun, and repeat **at most twice**; list what's left. You can't launch
+8. **Self-review** — load `qa-review-report` and run its checklist (A–G) against your own work,
+   using `ac-coverage.cjs` on a fresh `npm run test:headed:retry` JSON run. Review the
+   **whole branch diff** (`git diff --stat main...HEAD` plus uncommitted), not only the
+   specs: global setup, config and scripts too. Fix every blocker **and every major**, not
+   just blockers (majors left open are what a human reviewer finds next), rerun, and repeat
+   **at most twice**; list what's left. Every negative or containment check has a break-it
+   note (`write-e2e-tests`, "Prove it can fail"), and timezone evidence comes from
+   `test:tz:offday`. You can't launch
    the `qa-test-reviewer` agent yourself, so recommend the user runs it for an independent
    review. Finish by building the business report (`qa-business-report`) from the last run.
 
@@ -86,7 +99,7 @@ data that really exists.
    runs. Self-review: findings fixed, findings left.
 3. **Reports** — path to the business report in `reports/business/`.
 4. **Defects and discrepancies** — app behaviour that contradicts an AC (with file:line in the
-   app and the failing/expected values), split into known (KNOWN-DEFECTS ID) and suspected
+   app and the failing/expected values), split into known (Jira key / KNOWN-DEFECTS ID) and suspected
    (new rows in `docs/suspected-defects.md`), plus suite bugs you fixed along the way.
 5. **Data gaps** — scenarios that can't execute until the tenant has certain data, and what
    data would unlock them.

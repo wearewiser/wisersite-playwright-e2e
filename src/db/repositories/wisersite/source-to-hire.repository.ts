@@ -13,11 +13,11 @@ const ATS_APPLICATIONS_TABLE = '"analytics"."gold_fct_ats_applications"';
 
 /**
  * Independent read path onto `analytics.gold_fct_ats_applications` for the Source to Hire
- * summary row shown at /admin/source-to-hire. Same cohort semantics as the app's own
- * getSourceToHireSummary (src/widgets/SourceToHireSummary/getSourceToHireSummary.ts) —
- * not applications-are-deleted, not internal — but written from scratch against a
- * separate connection, so a test comparing the UI to this is a genuine check against the
- * warehouse, not the app confirming its own query against itself.
+ * board at /analytics/source-to-hire. Cohort: every non-deleted application, internal ones
+ * included (WP23-417: "applications" means all applications, on every Source to Hire
+ * section). Written from scratch against a separate connection, so a test comparing the UI
+ * to this is a genuine check against the warehouse, not the app confirming its own query
+ * against itself.
  */
 export class SourceToHireRepository {
   constructor(private readonly db: TenantSqlClient) {}
@@ -31,8 +31,7 @@ export class SourceToHireRepository {
          AVG(days_to_hire_observed) FILTER (WHERE is_hired) AS avg_hire_period_days
        FROM ${ATS_APPLICATIONS_TABLE}
        WHERE application_created_date BETWEEN $1::date AND $2::date
-         AND NOT is_deleted
-         AND NOT internal_application`,
+         AND NOT is_deleted`,
       [startDate, endDate],
     );
     return this.mapRow(row);
@@ -50,8 +49,7 @@ export class SourceToHireRepository {
          to_char(MIN(application_created_date), 'YYYY-MM-DD') AS min_date,
          to_char(MAX(application_created_date), 'YYYY-MM-DD') AS max_date
        FROM ${ATS_APPLICATIONS_TABLE}
-       WHERE NOT is_deleted
-         AND NOT internal_application`,
+       WHERE NOT is_deleted`,
     );
     if (!row?.min_date || !row.max_date) return null;
     return { minDate: row.min_date, maxDate: row.max_date };
@@ -72,7 +70,6 @@ export class SourceToHireRepository {
        FROM ${ATS_APPLICATIONS_TABLE}
        WHERE application_created_date BETWEEN $1::date AND $2::date
          AND NOT is_deleted
-         AND NOT internal_application
        GROUP BY application_created_date
        ORDER BY application_created_date`,
       [startDate, endDate],
@@ -89,17 +86,25 @@ export class SourceToHireRepository {
    * Per-`source_channel` application/screened/hire counts for the window — backs both
    * "Applications by Source" (top 6 by applications) and "Source Performance Breakdown"
    * (all rows) in the app, which both render `getSourcePerformanceBreakdown`'s output.
-   * Same cohort exclusions as `getSummary`. Drops zero-application rows (WP23-159 AC 4.3) and
-   * blank channels (AC silent; ticket thread: nulls are stored but excluded from the UI).
+   * Same cohort as `getSummary`, but counted as it stood at the window's end (WP23-442, PO
+   * option B: each period's progress counts only up to its own end date): an application first
+   * observed after `endDate` is left out, and it counts as screened / hired only if it reached
+   * that stage by `endDate`. For a window ending today this equals counting to today; on a past
+   * window it can differ from `getSummary` (WP23-442 D-2). Drops zero-application rows
+   * (WP23-159 AC 4.3) and blank channels (AC silent; ticket thread: nulls are stored but
+   * excluded from the UI).
    */
   async getBySource(startDate: string, endDate: string): Promise<SourceBreakdown[]> {
     const rows = await this.db.query<SourceBreakdownRawRow>(
       `WITH apps AS (
-         SELECT source_channel, is_screened, is_hired
+         SELECT
+           source_channel,
+           COALESCE(is_screened AND reached_in_review_date <= $2::date, false) AS is_screened,
+           COALESCE(is_hired AND reached_hired_date <= $2::date, false) AS is_hired
          FROM ${ATS_APPLICATIONS_TABLE}
          WHERE application_created_date BETWEEN $1::date AND $2::date
+           AND first_observed_date <= $2::date
            AND NOT is_deleted
-           AND NOT internal_application
        )
        SELECT
          source_channel,

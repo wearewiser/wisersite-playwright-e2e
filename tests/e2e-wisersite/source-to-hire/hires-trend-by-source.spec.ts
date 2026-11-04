@@ -12,7 +12,11 @@ import {
 } from '../../../src/expectations/wisersite/hires-trend.expectations';
 import { formatMonthLabel } from '../../../src/utils/wisersite/date-format';
 import { details, markLimitedByData } from '../../../src/utils/playwright/test-annotations';
-import { hiresTrendMonthWindow } from '../../../src/utils/wisersite/date-window';
+import {
+  monthOf,
+  resolveGlobalPreset,
+  widgetDayWindow,
+} from '../../../src/utils/wisersite/date-window';
 
 /**
  * WP23-158 — Source to Hire > Hires Trend by Source.
@@ -75,13 +79,11 @@ test.describe('WP23-158 Hires Trend by Source', () => {
       async ({ sourceToHirePage, hiresTrendRepository }) => {
         const { hiresTrend } = sourceToHirePage;
         await sourceToHirePage.summary.waitForLoaded();
-        // Pin the global range so "match-global" has a deterministic month span.
+        // Pin the global range so "match-global" has a deterministic span: the preset's dates on
+        // the user's calendar, not the date button's text (WP23-419 D-3).
         await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
-        const window = hiresTrendMonthWindow(
-          timePeriod,
-          await sourceToHirePage.dateRange.getActiveRange(),
-        );
-        const rows = await hiresTrendRepository.getMonthlyHiresBySource();
+        const window = widgetDayWindow(timePeriod, resolveGlobalPreset('Last 12 months'));
+        const rows = await hiresTrendRepository.getDailyHiresBySource();
         if (expectedHiresTrendTable({ rows, window, comparisonMonths: null }) === null) {
           markLimitedByData(
             'No hires in the plotted months: every comparison was only checked as "No data for this period".',
@@ -99,11 +101,11 @@ test.describe('WP23-158 Hires Trend by Source', () => {
               comparisonMonths: comparison.months,
             });
             console.log(
-              'Hires Trend (%s, %s) months %s..%s — SQL-derived table:',
+              'Hires Trend (%s, %s) days %s..%s — SQL-derived table:',
               timePeriod,
               comparison.value,
-              window.startMonth,
-              window.endMonth,
+              window.startDate,
+              window.endDate,
               expected,
             );
 
@@ -172,12 +174,9 @@ test.describe('WP23-158 Hires Trend by Source', () => {
       await sourceToHirePage.summary.waitForLoaded();
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
       await hiresTrend.setTimePeriod('last-12-months');
-      const window = hiresTrendMonthWindow(
-        'last-12-months',
-        await sourceToHirePage.dateRange.getActiveRange(),
-      );
+      const window = widgetDayWindow('last-12-months', resolveGlobalPreset('Last 12 months'));
       const expected = expectedHiresTrendTable({
-        rows: await hiresTrendRepository.getMonthlyHiresBySource(),
+        rows: await hiresTrendRepository.getDailyHiresBySource(),
         window,
         comparisonMonths: null,
       });
@@ -186,15 +185,18 @@ test.describe('WP23-158 Hires Trend by Source', () => {
         'No hires in the last 12 months — the chart shows its empty state, nothing to hover.',
       );
 
+      // Hover only once the chart plots this period's data, not the previous period's.
+      await expect
+        .poll(() => hiresTrend.readTable(), { timeout: WIDGET_TIMEOUT_MS })
+        .toEqual(expected);
       for (const [edge, month] of [
-        ['start', window.startMonth],
-        ['end', window.endMonth],
+        ['start', monthOf(window.startDate)],
+        ['end', monthOf(window.endDate)],
       ] as const) {
         await hiresTrend.hoverPlot(edge);
-        expect(await hiresTrend.readTooltip()).toEqual({
-          month: formatMonthLabel(month),
-          rows: expectedTooltipRows(expected!, month),
-        });
+        await expect
+          .poll(() => hiresTrend.readTooltip())
+          .toEqual({ month: formatMonthLabel(month), rows: expectedTooltipRows(expected!, month) });
       }
     },
   );
@@ -212,11 +214,8 @@ test.describe('WP23-158 Hires Trend by Source', () => {
       await hiresTrend.setTimePeriod('last-12-months');
       await hiresTrend.setComparison('12-months');
 
-      const rows = await hiresTrendRepository.getMonthlyHiresBySource();
-      const window = hiresTrendMonthWindow(
-        'last-12-months',
-        await sourceToHirePage.dateRange.getActiveRange(),
-      );
+      const rows = await hiresTrendRepository.getDailyHiresBySource();
+      const window = widgetDayWindow('last-12-months', resolveGlobalPreset('Last 12 months'));
       const withoutComparison = expectedHiresTrendTable({ rows, window, comparisonMonths: null });
       test.skip(
         withoutComparison === null,

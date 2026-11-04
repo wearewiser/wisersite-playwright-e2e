@@ -1,6 +1,7 @@
 import type {
   DateWindow,
   GlobalPresetLabel,
+  MonthBucket,
   WidgetPresetValue,
 } from '../../types/wisersite/source-to-hire.types';
 
@@ -12,11 +13,9 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * app (AC silent: per app `src/utils/analytics/date/*`), written independently and never imported.
  * Where a ticket does define a window, the ticket wins (see WP23-159 AC 1 / docs/test-plans D-3).
  *
- * Two different "today"s are in play:
- * - The global date-range picker anchors to the **local** calendar day (`localTodayIso`).
- * - The Hires Trend chart's own periods count months back from the **UTC** month
- *   (`utcTodayIso`).
- * Both then walk days/months as UTC milliseconds (DST-safe), via the same two functions below.
+ * The global date-range picker, and every widget's own period (WP23-419), anchor to the
+ * **local** calendar day (`localTodayIso`), then walk days/months as UTC milliseconds
+ * (DST-safe), via the same two functions below.
  */
 
 /** UTC calendar day of `now`, as `YYYY-MM-DD`. */
@@ -106,23 +105,101 @@ export function monthOf(date: string): string {
   return `${date.slice(0, 7)}-01`;
 }
 
+/** A widget's own "Time period" option and the page preset with the same name. */
+const WIDGET_PRESET_LABEL: Record<Exclude<WidgetPresetValue, 'match-global'>, GlobalPresetLabel> = {
+  'last-30-days': 'Last 30 days',
+  'last-3-months': 'Last 3 months',
+  'last-6-months': 'Last 6 months',
+  'last-12-months': 'Last 12 months',
+};
+
 /**
- * WP23-158 AC 1.1 (D-6: calendar months, pending PO; per app `resolveMonthWindow`) — which months the chart
- * plots for each of its own "Time period" options. `match-global` takes the months the global
- * range touches; every other option counts back from the current **UTC** month, inclusive.
+ * WP23-158 AC 1.1 / WP23-93 AC 1.2 — the days a chart covers for its own "Time period":
+ * the global range for Match Global, otherwise the same dates as the page preset with that name
+ * (PO 2026-10-21, WP23-419).
  */
-export function hiresTrendMonthWindow(
+export function widgetDayWindow(
   timePeriod: WidgetPresetValue,
   globalRange: DateWindow,
   now: Date = new Date(),
-): { startMonth: string; endMonth: string } {
-  if (timePeriod === 'match-global') {
-    return { startMonth: monthOf(globalRange.startDate), endMonth: monthOf(globalRange.endDate) };
+): DateWindow {
+  if (timePeriod === 'match-global') return globalRange;
+  return resolveGlobalPreset(WIDGET_PRESET_LABEL[timePeriod], now);
+}
+
+/**
+ * The calendar months `window` touches, each clipped to the window's days: a monthly chart's
+ * part first / last month counts only the days inside the range (WP23-419 D-1, fixed b31efaa).
+ */
+export function monthBuckets({ startDate, endDate }: DateWindow): MonthBucket[] {
+  return monthsInRange(monthOf(startDate), monthOf(endDate)).map((month) => {
+    const lastDay = nthDayDate(nthMonthDate(month, 1), -1);
+    return {
+      month,
+      startDate: startDate > month ? startDate : month,
+      endDate: endDate < lastDay ? endDate : lastDay,
+    };
+  });
+}
+
+/**
+ * WP23-93 AC 1.3 / WP23-158 AC 3 "vs N months previous": `window` moved back `months` whole
+ * months, bucketed the same way and paired with `window`'s buckets by index. Where the moved
+ * window would end on `window`'s first day, it stops the day before (AC silent on overlap: per
+ * app `priorMonthBuckets`).
+ */
+export function priorMonthBuckets(window: DateWindow, months: number): MonthBucket[] {
+  const dayBefore = nthDayDate(window.startDate, -1);
+  return monthBuckets({
+    startDate: nthMonthDate(window.startDate, -months),
+    endDate: nthMonthDate(window.endDate, -months),
+  }).map((bucket) =>
+    bucket.endDate === window.startDate ? { ...bucket, endDate: dayBefore } : bucket,
+  );
+}
+
+/** `rows` that fall inside each bucket's days, one array per bucket, in bucket order. */
+export function groupByMonthBucket<T extends { day: string }>(
+  rows: readonly T[],
+  buckets: readonly MonthBucket[],
+): T[][] {
+  return buckets.map((bucket) =>
+    rows.filter((row) => row.day >= bucket.startDate && row.day <= bucket.endDate),
+  );
+}
+
+/**
+ * The latest run of at least `minLength` consecutive days inside `bounds` on which `isQuiet`
+ * holds for every day, trimmed to its last `maxLength` days. Days missing from `days` count as
+ * quiet. One pass over the calendar; `null` when no run is long enough.
+ */
+export function latestQuietWindow<T extends { day: string }>({
+  days,
+  bounds,
+  isQuiet,
+  minLength,
+  maxLength,
+}: {
+  days: T[];
+  bounds: DateWindow;
+  isQuiet: (day: T) => boolean;
+  minLength: number;
+  maxLength: number;
+}): DateWindow | null {
+  const noisy = new Set(days.filter((day) => !isQuiet(day)).map((day) => day.day));
+  let runEnd: string | null = null;
+  let runLength = 0;
+  for (let day = bounds.endDate; day >= bounds.startDate; day = nthDayDate(day, -1)) {
+    if (noisy.has(day)) {
+      if (runEnd && runLength >= minLength) break;
+      runEnd = null;
+      runLength = 0;
+      continue;
+    }
+    runEnd ??= day;
+    runLength += 1;
+    if (runLength >= maxLength) break;
   }
-  const endMonth = monthOf(utcTodayIso(now));
-  if (timePeriod === 'last-30-days') {
-    return { startMonth: monthOf(nthDayDate(utcTodayIso(now), -29)), endMonth };
-  }
-  const monthsBack = timePeriod === 'last-3-months' ? 3 : timePeriod === 'last-6-months' ? 6 : 12;
-  return { startMonth: nthMonthDate(endMonth, -(monthsBack - 1)), endMonth };
+  if (!runEnd || runLength < minLength) return null;
+  return { startDate: nthDayDate(runEnd, -(Math.min(runLength, maxLength) - 1)), endDate: runEnd };
 }

@@ -51,6 +51,16 @@ New board → new page + fixture entry. New widget → new component + property 
   without a reason in a comment.
 - Read charts through their sr-only tables, not SVG geometry. When SVG is the only source
   (colour, hover), say so in a JSDoc on the method.
+- Colour and tone: read the **rendered** colour and map it to the meaning the AC cares about
+  (good / neutral / bad) with `matchTextColourToken()` (`src/utils/dom/css.ts`). Never read
+  class names for it, hashed or not; that exception doesn't exist. Assert the band, not the
+  exact shade.
+- Interactions are real user input: `click()`, `hover()`, `selectOption()`, keyboard. Never
+  `dispatchEvent()` or synthetic events; they pass when a user can't do the thing. Awkward
+  targets (donut arcs) use `hover({ position })` with `ownHitPoint()`
+  (`src/utils/dom/hit-point.ts`).
+- Expand or collapse things the way a user does: check whether the target is visible, then
+  click the named control. Don't read state from class names like `nav-group--collapsed`.
 - Scope every widget locator under its `root` so two widgets with the same control names
   (e.g. two "Time period" comboboxes) never collide.
 
@@ -83,6 +93,16 @@ test(
   `widgetRequests.last('<key>')`, never recompute it separately and hope they agree.
 - Use web-first waits: `expect.poll(() => widget.readRows(), { timeout: WIDGET_TIMEOUT_MS }).toEqual(expected)`,
   `toBeVisible`, `toHaveCount(0)`. No `waitForTimeout` in specs or page objects.
+- **After any filter, preset or period change, the old content is still on screen** until
+  the refetch lands. "Wait until rows exist" passes at once on the old rows. Before reading,
+  either wait for the widget's request for the new window (`widgetRequests`), or poll until
+  the reading **equals** the expected value. Never compare readings taken straight after a
+  change without one of those.
+- Specs hold no helper functions. A reusable check goes in `src/expectations/` (what the UI
+  should show) or a component `read*()` method (what it does show), and a reusable flow goes
+  on the page. `check-oracle-independence.cjs` flags spec functions that call `expect`.
+- Keep `try` blocks around the one call that can throw for the reason the `catch` reports.
+  Do status or value checks after the `try`, so the error message names the real cause.
 - "Absent" assertions must first prove the widget's request completed for the current
   window (`expect.poll(() => widgetRequests.last(key)).toEqual(window)`), so that absent does
   not just mean not loaded yet.
@@ -102,15 +122,44 @@ test(
   widget sent): those are the app's opinion. They may pick a window or decide a defect label,
   with an `oracle-ok:` comment saying so.
 - Known defect: assert the AC and let the test fail. Label it with
-  `markKnownDefect(KNOWN_DEFECTS.<key>)` (`src/utils/playwright/test-annotations.ts`, IDs in
-  `src/constants/wisersite/known-defects.constants.ts`, from
-  `../wisersite-and-payload-plugin/testing-docs/KNOWN-DEFECTS.md`); call it conditionally when
-  the defect only affects some windows. Never `test.fail()`, never assert the buggy value.
+  `markKnownDefect(KNOWN_DEFECTS.<key>)` (`src/utils/playwright/test-annotations.ts`, labels in
+  `src/constants/wisersite/known-defects.constants.ts`); call it conditionally when the defect
+  only affects some windows. Never `test.fail()`, never assert the buggy value. The label's
+  description starts with the defect's **Jira key** (`'WP23-500: …'`), so a failing test shows
+  which ticket covers it; use the `../wisersite-and-payload-plugin/testing-docs/KNOWN-DEFECTS.md`
+  ID only when there is no ticket. When the register lists the defect under another ID, add
+  `'<Jira key>': '<register ID>'` to `KNOWN_DEFECT_REGISTER_ROWS` in the same file, so
+  `check-defect-labels.cjs` finds the row. Never edit the register (it's in the plugin repo).
+- Each label constant must be used in `tests/` as `KNOWN_DEFECTS.<key>` /
+  `SUSPECTED_DEFECTS.<key>` (the checker scans specs), so pick the label in the spec, not inside
+  an expectation helper: helpers return the symptom (`true`, `'hidden'`), specs map it to a label.
+- No performance or timing tests ("widget shown within 1 s"): out of scope for this repo.
+- **Scope every defect label to its symptom.** A label applied up front, before one big
+  assertion, also labels unrelated failures (a wrong number elsewhere, a timezone shift the
+  defect doesn't cover). Apply it only when the failing value is the one the defect explains,
+  for a window and preset the defect covers: split the assertion so the defect's part is
+  separate, or label in a `catch` that checks the symptom, then rethrows. Ask: "if this test
+  failed for a different reason, would it still say known defect?" If yes, narrow it.
 - Suspected defect (not in KNOWN-DEFECTS.md): add it to `docs/suspected-defects.md` and
   `SUSPECTED_DEFECTS`, and label the failing path with `markSuspectedDefect()`. Label only when
   the failure is that defect (e.g. in a `catch` that checks the symptom, then rethrows).
 - No hard-coded dates, counts or source names derived from today's data. Literals are only
   allowed for fixed UI copy, which lives in constants.
+
+## Prove it can fail
+
+A test that has never failed is unproven. For every test that asserts something **didn't**
+happen (no refetch, stays hidden, unchanged, contained to one widget), and for every fix to a
+test that a reviewer said "can't fail", run a break-it check once:
+
+1. Make a temporary, local-only change to the **test side** that reproduces the bug the test
+   is meant to catch: e.g. trigger the unwanted refetch from the component, or feed the
+   assertion the wrong window. Never touch the app repo.
+2. Run that test and confirm it **fails** with a message that names the problem.
+3. Revert, rerun, confirm green, and note in the report what you broke and how it failed.
+
+Also check *when* a negative check runs: it must run after the bad thing could have happened
+(e.g. after the request that would carry it has had its chance), not straight after the action.
 
 ## Done when
 

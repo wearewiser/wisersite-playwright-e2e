@@ -4,7 +4,7 @@
  *
  *   node .claude/skills/write-e2e-tests/scripts/check-oracle-independence.cjs [--strict]
  *
- * Three checks over src/expectations, src/utils/wisersite, src/db/repositories and tests/:
+ * Four checks over src/expectations, src/utils/wisersite, src/db/repositories and tests/:
  *  1. COPIES-APP: a comment says the code mirrors / matches / is the same as the app or plugin,
  *     and the surrounding comment block cites no AC ("AC 5.1"), discrepancy ("D-3") or
  *     "AC silent". Copying the app is only allowed where the ticket is silent, and must say so.
@@ -13,6 +13,9 @@
  *  3. REQUEST-BOUNDS: a test or expectation takes minDate/maxDate from the app's own request.
  *     Those are the app's bounds, not the data; they may pick a window or decide a defect
  *     label, never produce an expected value.
+ *  4. SPEC-HELPER: a spec file declares a function (top level or inside a describe) that
+ *     calls `expect`. Specs hold flow and assertions only; a reusable check belongs in
+ *     src/expectations (where checks 1-2 can see it) or a component read*() method.
  * Silence a reviewed line with a comment on it or the line above: `oracle-ok: <reason>`.
  * Read-only. Exit 1 with --strict when anything is flagged.
  */
@@ -71,6 +74,24 @@ for (const file of DIRS.flatMap(walk)) {
     }
   });
 
+  if (file.endsWith('.spec.ts')) {
+    const declaration =
+      /^\s*(export\s+)?(async\s+)?function\s+\w+|^\s*(export\s+)?const\s+\w+\s*=\s*(async\s*)?(\([^)]*\)|\w+)\s*(:\s*[^=]+)?=>/;
+    lines.forEach((line, i) => {
+      if (!declaration.test(line) || silenced(i)) return;
+      const indent = /^\s*/.exec(line)[0].length;
+      let end = i + 1;
+      while (
+        end < lines.length &&
+        !(lines[end].trim() && /^\s*/.exec(lines[end])[0].length <= indent)
+      )
+        end += 1;
+      if (/\bexpect(\.poll|\.soft)?\(/.test(lines.slice(i, end + 1).join('\n'))) {
+        add('SPEC-HELPER', file, i, line);
+      }
+    });
+  }
+
   if (file.startsWith('src/expectations')) {
     lines.forEach((line, i) => {
       if (!/^export (async )?function |^export const \w+\s*=\s*\(/.test(line) || silenced(i))
@@ -89,7 +110,8 @@ if (!findings.length) {
   for (const f of findings) console.log(`  ${f.kind.padEnd(14)} ${f.at}  ${f.text}`);
   console.log(
     '\nCite the AC (or "AC silent: per app <file:line>", or the D-n discrepancy) in the comment,\n' +
-      'fix the code to follow the ticket, or mark a reviewed line with `oracle-ok: <reason>`.',
+      'fix the code to follow the ticket, move spec helpers to src/expectations or a component,\n' +
+      'or mark a reviewed line with `oracle-ok: <reason>`.',
   );
 }
 process.exit(strict && findings.length ? 1 : 0);

@@ -9,7 +9,7 @@ import type {
   SourceRow,
 } from '../../types/wisersite/source-to-hire.types';
 import { formatLocaleCount } from '../../utils/format/locale-number';
-import { monthOf, nthMonthDate, resolveGlobalPreset } from '../../utils/wisersite/date-window';
+import { resolveGlobalPreset } from '../../utils/wisersite/date-window';
 
 /**
  * Expectations for the three widgets built on the per-source breakdown — Applications by Source
@@ -144,26 +144,3 @@ export const SOURCE_PERFORMANCE_SORT_VALUE: Record<
   'Total hires': (row) => row.hires ?? 0,
   'Conversion rate': (row) => Number.parseFloat(row.rateLabel),
 };
-
-const MONTH_PRESET_LENGTH: Partial<Record<GlobalPresetLabel, number>> = {
-  'Last 3 months': 3,
-  'Last 6 months': 6,
-  'Last 12 months': 12,
-};
-
-/**
- * Whether the window the widget asked for is exactly suspected defect QA-WP23-62-1 (WP23-159
- * AC 1, docs/test-plans D-3): a "Last N months" option that ends on the expected day but starts
- * on the 1st of the month N−1 months back instead of on the global preset's start. Used only to
- * label the failure; any other mismatch (another end date, or "Last 30 days") isn't this defect.
- */
-export function widgetMonthPresetDefectApplies(
-  preset: GlobalPresetLabel,
-  expected: DateWindow,
-  requested: { startDate?: string; endDate?: string } | undefined,
-): boolean {
-  const months = MONTH_PRESET_LENGTH[preset];
-  if (!months || requested?.endDate !== expected.endDate) return false;
-  const calendarMonthStart = nthMonthDate(monthOf(expected.endDate), -(months - 1));
-  return requested.startDate === calendarMonthStart && calendarMonthStart !== expected.startDate;
-}

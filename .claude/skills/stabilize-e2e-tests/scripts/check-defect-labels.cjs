@@ -5,7 +5,8 @@
  *   node .claude/skills/stabilize-e2e-tests/scripts/check-defect-labels.cjs [--strict]
  *
  * Reads `src/constants/wisersite/known-defects.constants.ts` (KNOWN_DEFECTS, SUSPECTED_DEFECTS;
- * each description starts with "<ID>:"), `../wisersite-and-payload-plugin/testing-docs/
+ * each description starts with "<ID>:", a Jira key resolved to its register row through
+ * KNOWN_DEFECT_REGISTER_ROWS), `../wisersite-and-payload-plugin/testing-docs/
  * KNOWN-DEFECTS.md` and `docs/suspected-defects.md`, and the specs that use them. Reports:
  *  - known label whose ID is missing from KNOWN-DEFECTS.md, or marked fixed / superseded there;
  *  - suspected label that is now logged in KNOWN-DEFECTS.md (move it to KNOWN_DEFECTS), or
@@ -33,18 +34,29 @@ function readConstants(source, name) {
   return out;
 }
 
+/** `{ jiraKey: registerId }` from KNOWN_DEFECT_REGISTER_ROWS. */
+function readRegisterRows(source) {
+  const start = source.indexOf('export const KNOWN_DEFECT_REGISTER_ROWS');
+  if (start < 0) return {};
+  const body = source.slice(start, source.indexOf('} as const', start));
+  const out = {};
+  for (const m of body.matchAll(/(['"])([^'"]+)\1:\s*(['"])([^'"]+)\3/g)) out[m[2]] = m[4];
+  return out;
+}
+
 /** `{ id: status }` from a Markdown table whose first column is the ID. */
 function readRegister(file, statusColumn) {
   if (!fs.existsSync(file)) return null;
   const rows = {};
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     if (!line.startsWith('|') || /^\|\s*-/.test(line)) continue;
-    const cells = line
-      .split('|')
-      .slice(1, -1)
-      .map((c) => c.replace(/\*\*/g, '').trim());
+    const raw = line.split('|').slice(1, -1);
+    const cells = raw.map((c) => c.replace(/\*\*/g, '').trim());
     if (!cells[0] || cells[0] === 'ID') continue;
-    rows[cells[0]] = cells[statusColumn] ?? '';
+    // A row closed later keeps its history ("open (…); re-confirmed …; **fixed (…)**"), so a
+    // bold closing marker anywhere in the status cell counts, not only its first word.
+    const marker = /\*\*\s*(fixed|superseded|accepted)\b[^*]*\*\*/i.exec(raw[statusColumn] ?? '');
+    rows[cells[0]] = marker ? marker[0].replace(/\*\*/g, '').trim() : (cells[statusColumn] ?? '');
   }
   return rows;
 }
@@ -71,6 +83,7 @@ function usedKeys() {
 const source = fs.readFileSync(CONSTANTS, 'utf8');
 const known = readConstants(source, 'KNOWN_DEFECTS');
 const suspected = readConstants(source, 'SUSPECTED_DEFECTS');
+const registerRows = readRegisterRows(source);
 const knownRegister = readRegister(KNOWN_MD, 4);
 // `docs/` is gitignored, so the suspected register only exists on the author's machine.
 const suspectedRegister = readRegister(SUSPECTED_MD, 5);
@@ -81,13 +94,14 @@ const rows = [];
 if (!knownRegister) problems.push(`Can't read ${KNOWN_MD}`);
 
 for (const [key, id] of Object.entries(known)) {
-  const status = knownRegister?.[id];
+  const rowId = knownRegister?.[id] !== undefined ? id : (registerRows[id] ?? id);
+  const status = knownRegister?.[rowId];
   let verdict = 'ok: open';
   if (status === undefined) verdict = 'PROBLEM: not in KNOWN-DEFECTS.md';
   else if (closed(status))
     verdict = `PROBLEM: ${status.split(/[;(]/)[0].trim()}, remove the label and re-check the test`;
   if (!used.has(`KNOWN_DEFECTS.${key}`)) verdict += ' (unused constant)';
-  rows.push(['known', key, id, verdict]);
+  rows.push(['known', key, rowId === id ? id : `${id} = ${rowId}`, verdict]);
 }
 for (const [key, id] of Object.entries(suspected)) {
   let verdict = 'ok: awaiting log / PO';

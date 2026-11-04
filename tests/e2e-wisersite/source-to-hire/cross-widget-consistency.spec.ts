@@ -7,12 +7,14 @@ import {
   rowsBySource,
 } from '../../../src/expectations/wisersite/source-breakdown.expectations';
 import { details, markLimitedByData } from '../../../src/utils/playwright/test-annotations';
+import { resolveGlobalPreset } from '../../../src/utils/wisersite/date-window';
 
 /**
  * WP23-156 AC 1.1.3 ("% hired" per source) and WP23-159 AC 2.4 ("conversion rate") describe the
  * same figure, hires / applications, so the two widgets must agree for every source.
  *
- * On data with 0 hires every rate is "0.0%", so this only proves the widgets agree on zero.
+ * A window where no source has hires would only prove the widgets agree on "0.0%"; the test
+ * reports that case as limited by data.
  */
 test.describe('WP23-156 AC 1.1.3 / WP23-159 AC 2.4 cross-widget consistency', () => {
   test(
@@ -27,7 +29,7 @@ test.describe('WP23-156 AC 1.1.3 / WP23-159 AC 2.4 cross-widget consistency', ()
       await sourceToHirePage.summary.waitForLoaded();
       await sourceToHirePage.selectGlobalDatePreset('Last 12 months');
 
-      const { startDate, endDate } = await sourceToHirePage.dateRange.getActiveRange();
+      const { startDate, endDate } = resolveGlobalPreset('Last 12 months');
       const bySource = await sourceToHireRepository.getBySource(startDate, endDate);
       test.skip(bySource.length === 0, 'No applications in the last 12 months to compare.');
       // Wait for both widgets to show the 12-month data: the previous preset's rows stay on

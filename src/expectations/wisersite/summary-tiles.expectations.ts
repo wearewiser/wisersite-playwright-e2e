@@ -109,36 +109,57 @@ function insideRange(window: DateWindow, minDate?: string, maxDate?: string): bo
 }
 
 /**
- * AC 5.1: a selected window that is totally or partially outside the available data shows no
- * comparison. AC 5.2: data for the selected window but not for the one before it shows the
- * headline only. So a comparison needs both windows inside `span` (`getDataSpan()`, from the
- * warehouse, never from the app's request).
+ * AC 5.2: when the period before the selected one starts before the available data, the tiles
+ * show the headline only. `span` is from the warehouse (`getDataSpan()`), never from the app's
+ * request. AC 5.1 (no comparison when the selected window runs past the last day of data) is no
+ * longer tested: the app's comparison there is accepted (WP23-87 D-2, 2026-11-02), so a window
+ * past the data end still compares.
  */
-export function isComparisonAvailable(
-  current: DateWindow,
-  previous: DateWindow,
-  span: DataSpan | null,
-): boolean {
-  return (
-    insideRange(current, span?.minDate, span?.maxDate) &&
-    insideRange(previous, span?.minDate, span?.maxDate)
-  );
+export function isComparisonAvailable(previous: DateWindow, span: DataSpan | null): boolean {
+  return span !== null && previous.startDate >= span.minDate;
 }
 
 /**
- * Whether known defect WP23-213 D-1 changes the outcome for this window. The app shows a
- * comparison when the previous window is inside the `minDate`/`maxDate` it sends, and on this
- * environment those are a today−90 fallback, not the data. Used only to label the failure as
- * a known defect; the expected values always come from `isComparisonAvailable`.
+ * WP23-87 AC 5.2: whether the app hides a comparison the ticket allows — known defect WP23-213
+ * D-1. The app shows a comparison only when the previous window is inside the `minDate`/`maxDate`
+ * it sends (on this environment a today−90 fallback, not the data). Used only to label the
+ * failure; the expected values always come from `isComparisonAvailable`.
  */
-export function comparisonGateDefectApplies(
-  current: DateWindow,
+export function comparisonHiddenByGate(
   previous: DateWindow,
   span: DataSpan | null,
   boardRange: { minDate?: string; maxDate?: string },
 ): boolean {
-  const appShowsComparison = insideRange(previous, boardRange.minDate, boardRange.maxDate);
-  return appShowsComparison !== isComparisonAvailable(current, previous, span);
+  return (
+    isComparisonAvailable(previous, span) &&
+    !insideRange(previous, boardRange.minDate, boardRange.maxDate)
+  );
+}
+
+/**
+ * WP23-87 AC 2 / AC 5.2, the WP23-377 symptom: the tiles show the right headline figures but no
+ * comparison where one is expected (no delta, no "vs …" caption, so a neutral graph). True only
+ * when that is the sole difference, so a wrong number is never put down to the known defect.
+ * Used only to label the failure.
+ */
+export function onlyComparisonMissing(
+  shown: readonly SummaryTileReading[],
+  expected: readonly SummaryTileReading[],
+): boolean {
+  return (
+    shown.length === expected.length &&
+    expected.some((tile) => tile.delta !== null) &&
+    shown.every((tile, index) => {
+      const want = expected[index]!;
+      return (
+        tile.label === want.label &&
+        tile.value === want.value &&
+        tile.delta === null &&
+        tile.comparisonLabel === null &&
+        tile.sparklineLabel === SPARKLINE_LABEL.neutral
+      );
+    })
+  );
 }
 
 /**
@@ -198,7 +219,7 @@ export function expectedSummaryTileReadings(
 /**
  * WP23-87 AC 1–3 and AC 5 for one window, from the warehouse: the four tiles the board should
  * show, whether AC 5 allows a comparison, and the previous window and data span that decided it
- * (the inputs `comparisonGateDefectApplies` needs to label WP23-213 D-1).
+ * (the inputs `comparisonHiddenByGate` needs to label WP23-377).
  */
 export async function expectedSummaryForWindow(
   repository: Pick<SourceToHireRepository, 'getSummary' | 'getDataSpan'>,
@@ -212,7 +233,7 @@ export async function expectedSummaryForWindow(
 }> {
   const span = await repository.getDataSpan();
   const previous = previousWindow(window);
-  const comparisonAvailable = isComparisonAvailable(window, previous, span);
+  const comparisonAvailable = isComparisonAvailable(previous, span);
   const expected = expectedSummaryTileReadings({
     current: await repository.getSummary(window.startDate, window.endDate),
     previous: comparisonAvailable

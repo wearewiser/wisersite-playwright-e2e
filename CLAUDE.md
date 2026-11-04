@@ -17,9 +17,17 @@ Postgres warehouse. See `README.md` for setup and the folder layout.
   params. Branch or skip on what Postgres says exists, with a reason.
 - Never weaken an assertion to match app behaviour, and never hide a bug behind `test.fail()`.
   A test that hits a known defect fails red and is labelled with `markKnownDefect()`
-  (`src/utils/playwright/test-annotations.ts`) using the ID from
-  `../wisersite-and-payload-plugin/testing-docs/KNOWN-DEFECTS.md`. A suspected new defect fails
-  unlabelled and is reported.
+  (`src/utils/playwright/test-annotations.ts`) citing the defect's Jira key, or its ID in
+  `../wisersite-and-payload-plugin/testing-docs/KNOWN-DEFECTS.md` when it has no ticket. If the
+  register still lists a Jira-keyed defect under its own ID, map the key to that row in
+  `KNOWN_DEFECT_REGISTER_ROWS` (`known-defects.constants.ts`); never edit the register. A
+  suspected new defect fails red with `markSuspectedDefect()` and a row in
+  `docs/suspected-defects.md`, and is reported.
+- When the user or PO accepts a defect's behaviour, stop testing it: remove the test (or the
+  assertion) and its label, and record it under "Known defects accepted" in
+  `docs/suspected-defects.md`. Never keep asserting the buggy value instead.
+- No performance or timing tests ("shown within 1 s", load times): out of scope for this repo.
+  List such ACs as not tested (out of scope) in plans and reviews.
 
 ## Strict page-object model
 

@@ -5,6 +5,9 @@
 
 export type DateWindow = { startDate: string; endDate: string };
 
+/** One calendar month of a day window: its `YYYY-MM-01` key and the window's days inside it. */
+export type MonthBucket = { month: string; startDate: string; endDate: string };
+
 /** The global date filter's presets, by their visible button label. */
 export type GlobalPresetLabel =
   'Last 30 days' | 'Last 3 months' | 'Last 6 months' | 'Last 12 months';
