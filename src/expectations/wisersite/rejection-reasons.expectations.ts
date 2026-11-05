@@ -26,8 +26,14 @@ export function formatRejectionShare(value: number, total: number): string {
  * WP23-94 AC 1.1.1 / 1.1.2 / 1.1.2.1 / 1.1.2.2: what the donut should show for a window — the
  * centre total of every rejection in the period (D-3: not just the top 6), and the top 6
  * categories by count (all of them when there are fewer), ties by name (AC silent: per app
- * `shapeRejectionReasons.ts:51`), each with its share of the period's total. `null` when there
- * are no rejections: the "No data for this period" state.
+ * `shapeRejectionReasons.ts:51`), each with its share of the period's total.
+ *
+ * `null` (the "No data for this period" state) when there is no category to draw: no rejections
+ * at all, or rejections that all have a blank reason. The ticket is silent on the second case;
+ * the app drops blank reasons before drawing (AC silent: per app `getRejectionReasons.ts:50`),
+ * so it shows the empty state too. With some blank and some named reasons the oracle's centre
+ * total still counts every rejection (D-3), so a total that leaves the blank ones out fails
+ * here. On current data no rejection has a blank reason (0 of 7,022, 2026-11-05).
  */
 export function expectedRejectionReasons(
   rejections: RejectionsInWindow,

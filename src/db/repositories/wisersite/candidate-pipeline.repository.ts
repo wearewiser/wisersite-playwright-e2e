@@ -162,8 +162,11 @@ export class CandidatePipelineRepository {
    * Counted as each application stood at the window's end (WP23-442 option B, applied to this
    * table by WP23-521): an application first recorded after `endDate` is left out, and a stage
    * counts only if it was reached by `endDate` (each stage's reach date; Offer's is
-   * `confirmed_observed_date`, AC silent: per app `atsApplications.ts` `stageAsOfSql`). For a
-   * window ending today this is the same as counting to today.
+   * `confirmed_observed_date`, AC silent: per app `atsApplications.ts` `stageAsOfSql`, which
+   * uses the same column). Despite its name, that column is the day the Offer stage was
+   * reached, not a hire: it is set for every application at Offer or beyond, hired or not
+   * (1,356 of 1,356, 716 of them never hired), and is never after `reached_hired_date`
+   * (checked 2026-11-05). For a window ending today this is the same as counting to today.
    * - applications: every application (AC 2.1.1)
    * - screened: the warehouse's own `is_screened` flag, screened by the end (AC 2.1.2)
    * - stage 1 interview / offered: reached the "Interview" / "Offer" stage or beyond (AC 2.1.3,
