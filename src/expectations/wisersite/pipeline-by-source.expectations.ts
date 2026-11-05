@@ -2,7 +2,11 @@ import {
   PIPELINE_TOP_N,
   TOTAL_ROW_LABEL,
 } from '../../constants/wisersite/candidate-pipeline.constants';
+import { GLOBAL_PRESETS } from '../../constants/wisersite/source-to-hire.constants';
+import type { CandidatePipelineRepository } from '../../db/repositories/wisersite/candidate-pipeline.repository';
 import type { PipelineSourceCounts } from '../../db/repositories/wisersite/candidate-pipeline.repository.types';
+import type { DateWindow, GlobalPresetLabel } from '../../types/wisersite/source-to-hire.types';
+import { resolveGlobalPreset } from '../../utils/wisersite/date-window';
 import type {
   PipelineBySourceColumn,
   PipelineBySourceDisplayRow,
@@ -124,13 +128,24 @@ export function expectedFilteredReading(
 }
 
 /**
- * Picks the window to exercise WP23-198 AC 2.2 / 2.3 on: the one showing the most sources.
- * `undefined` when there are no candidates.
+ * Picks the global preset to exercise WP23-198 AC 2.2 / 2.3 on: the one whose table shows the
+ * most sources, with its window and those rows. `null` when no preset has any source (the board
+ * leaves the table off), so a test can skip instead of waiting for a table that never comes.
  */
-export function windowWithMostSources<T extends { top: PipelineSourceCounts[] }>(
-  candidates: T[],
-): T | undefined {
-  return [...candidates].sort((a, b) => b.top.length - a.top.length)[0];
+export async function presetWithMostSources(
+  repository: Pick<CandidatePipelineRepository, 'getPipelineBySource'>,
+): Promise<{ preset: GlobalPresetLabel; window: DateWindow; top: PipelineSourceCounts[] } | null> {
+  const candidates = await Promise.all(
+    GLOBAL_PRESETS.map(async (preset) => {
+      const window = resolveGlobalPreset(preset);
+      const top = topPipelineSources(
+        await repository.getPipelineBySource(window.startDate, window.endDate),
+      );
+      return { preset, window, top };
+    }),
+  );
+  const best = [...candidates].sort((a, b) => b.top.length - a.top.length)[0];
+  return best && best.top.length > 0 ? best : null;
 }
 
 /**

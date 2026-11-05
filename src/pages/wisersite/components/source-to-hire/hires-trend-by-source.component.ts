@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { widgetCard } from '../../../../utils/dom/widget-card';
 import {
   NO_DATA_MESSAGE,
   WIDGET_HEADINGS,
@@ -40,9 +41,7 @@ export class HiresTrendBySourceWidget {
       name: WIDGET_HEADINGS.hiresTrendBySource,
       exact: true,
     });
-    this.root = this.heading.locator(
-      `xpath=ancestor::*[.//table or .//p[normalize-space()="${NO_DATA_MESSAGE}"]][1]`,
-    );
+    this.root = widgetCard(this.heading);
     this.comparisonSelect = this.root.getByRole('combobox', { name: 'Comparison' });
     this.timePeriodSelect = this.root.getByRole('combobox', { name: 'Time period' });
     this.emptyState = this.root.getByText(NO_DATA_MESSAGE, { exact: true });

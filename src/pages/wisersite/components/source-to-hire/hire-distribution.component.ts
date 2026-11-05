@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { widgetCard } from '../../../../utils/dom/widget-card';
 import { WIDGET_HEADINGS } from '../../../../constants/wisersite/source-to-hire.constants';
 import type { HireDistributionSegment } from '../../../../types/wisersite/source-to-hire.types';
 import { ownHitPoint } from '../../../../utils/dom/hit-point';
@@ -27,7 +28,7 @@ export class HireDistributionWidget {
       name: WIDGET_HEADINGS.hireDistribution,
       exact: true,
     });
-    this.root = this.heading.locator('xpath=ancestor::*[.//table][1]');
+    this.root = widgetCard(this.heading);
     this.table = this.root.getByRole('table');
     this.segments = this.root.locator('svg g path');
     this.legendItems = this.root.locator('ul > li');

@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { widgetCard } from '../../../../utils/dom/widget-card';
 import {
   WIDGET_HEADINGS,
   WIDGET_TIMEOUT_MS,
@@ -34,7 +35,7 @@ export class ApplicationsBySourceWidget {
       name: WIDGET_HEADINGS.applicationsBySource,
       exact: true,
     });
-    this.root = this.heading.locator('xpath=ancestor::*[.//table][1]');
+    this.root = widgetCard(this.heading);
     this.subtitle = this.root.getByText('Top 6 sources', { exact: true });
     this.legendItems = this.root.getByRole('list', { name: 'Legend' }).getByRole('listitem');
     this.controls = this.root.getByRole('combobox');

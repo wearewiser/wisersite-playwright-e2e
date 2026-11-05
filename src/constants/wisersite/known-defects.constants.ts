@@ -6,9 +6,6 @@
  * through `KNOWN_DEFECT_REGISTER_ROWS`.
  */
 export const KNOWN_DEFECTS = {
-  /** Summary comparison hidden: gated on the app's `minDate`/`maxDate` (today−90 fallback), not the data. */
-  comparisonGate:
-    "WP23-377: the summary comparison is gated on the app's minDate/maxDate (today−90 fallback on this environment), not on the available data (WP23-87 AC 5)",
   /** The global date button keeps the server's dates when the user's calendar day differs. */
   dateButtonServerDate:
     "WP23-419 D-3: in a timezone whose date differs from the server's, the global date button shows the server-rendered dates while the board uses the user's own (WP23-198 AC 2.1)",
@@ -29,6 +26,4 @@ export const SUSPECTED_DEFECTS = {
  * defect under its own ID. Kept here because this repo never edits the plugin's register. Drop an
  * entry once the register row carries the Jira key itself.
  */
-export const KNOWN_DEFECT_REGISTER_ROWS = {
-  'WP23-377': 'WP23-213 D-1',
-} as const;
+export const KNOWN_DEFECT_REGISTER_ROWS = {} as const;

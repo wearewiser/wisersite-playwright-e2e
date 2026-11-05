@@ -185,7 +185,7 @@ test.describe('WP23-93 Pipeline Trend', () => {
         what: 'Tries 3, 6 and 12 months back for each date range and checks the dotted figures against the database.',
         variant: preset,
       }),
-      async ({ candidatePipelinePage, candidatePipelineRepository }) => {
+      async ({ candidatePipelinePage, widgetRequests, candidatePipelineRepository }) => {
         const { pipelineTrend } = candidatePipelinePage;
         await candidatePipelinePage.waitForCharts();
         await candidatePipelinePage.selectGlobalDatePreset(preset);
@@ -201,7 +201,12 @@ test.describe('WP23-93 Pipeline Trend', () => {
 
         for (const { value, months } of PIPELINE_TREND_COMPARISONS.filter((c) => c.months)) {
           await test.step(`comparison "${value}"`, async () => {
+            // Without history the expected table has no "(prior)" columns, which is also what
+            // the chart showed before the switch: let the change settle before reading.
+            const beforeSwitch = widgetRequests.mark();
             await pipelineTrend.setComparison(value);
+            await expect(pipelineTrend.comparisonSelect).toHaveValue(value);
+            await widgetRequests.waitForQuiet(beforeSwitch);
             const expected = expectedPipelineTrendTable({
               daily,
               window,

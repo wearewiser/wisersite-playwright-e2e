@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { widgetCard } from '../../../../utils/dom/widget-card';
 import {
   PIPELINE_TREND_EMPTY_MESSAGE,
   PIPELINE_TREND_TABLE_CAPTION,
@@ -41,9 +42,7 @@ export class PipelineTrendWidget {
       name: PIPELINE_WIDGET_HEADINGS.pipelineTrend,
       exact: true,
     });
-    this.root = this.heading.locator(
-      `xpath=ancestor::*[.//table or .//p[normalize-space()="${PIPELINE_TREND_EMPTY_MESSAGE}"]][1]`,
-    );
+    this.root = widgetCard(this.heading);
     this.comparisonSelect = this.root.getByRole('combobox', { name: 'Comparison' });
     this.timePeriodSelect = this.root.getByRole('combobox', { name: 'Time period' });
     this.table = this.root

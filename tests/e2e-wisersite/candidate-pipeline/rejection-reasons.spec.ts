@@ -57,17 +57,26 @@ test.describe('WP23-94 Rejection Reasons', () => {
         what: 'For each date range at the top of the page, compares the reasons, their shares and the total in the centre with the rejections in the database for that period.',
         variant: preset,
       }),
-      async ({ candidatePipelinePage, candidatePipelineRepository }) => {
+      async ({ candidatePipelinePage, widgetRequests, candidatePipelineRepository }) => {
         const { rejectionReasons } = candidatePipelinePage;
         await candidatePipelinePage.waitForCharts();
         await candidatePipelinePage.selectGlobalDatePreset(preset);
         // The preset's dates on the user's calendar, not the date button's text (WP23-419 D-3).
         const range = resolveGlobalPreset(preset);
+        await widgetRequests.waitForWindow(PIPELINE_WIDGET_KEYS.rejectionReasons, range);
         const expected = expectedRejectionReasons(
           await candidatePipelineRepository.getRejectionsInWindow(range.startDate, range.endDate),
         );
         console.log('Rejection Reasons %s %o — SQL-derived: %o', preset, range, expected);
 
+        if (expected === null) {
+          // "No table" alone would also match a chart that hasn't rendered yet.
+          markLimitedByData(
+            'No rejections in this period: only the "No data for this period" state was checked.',
+          );
+          await expect(rejectionReasons.emptyState).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
+          return;
+        }
         await expect
           .poll(() => rejectionReasons.readReading(), { timeout: WIDGET_TIMEOUT_MS })
           .toEqual(expected);
@@ -190,7 +199,7 @@ test.describe('WP23-94 Rejection Reasons', () => {
       const { rejectionReasons } = candidatePipelinePage;
       await candidatePipelinePage.waitForCharts();
       const window = pastMonthWhereRejectionCapMatters(
-        await candidatePipelineRepository.getMonthlyRejectionCap(),
+        await candidatePipelineRepository.getMonthlyRejectionCap(localTodayIso()),
       );
       test.skip(
         window === null,

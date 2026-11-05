@@ -103,11 +103,6 @@ export function trendStateFor(pct: number | null, higherIsBetter: boolean): Tren
   return 'neutral';
 }
 
-function insideRange(window: DateWindow, minDate?: string, maxDate?: string): boolean {
-  if (!minDate || !maxDate || minDate > maxDate) return false;
-  return window.startDate >= minDate && window.endDate <= maxDate;
-}
-
 /**
  * AC 5.2: when the period before the selected one starts before the available data, the tiles
  * show the headline only. `span` is from the warehouse (`getDataSpan()`), never from the app's
@@ -117,49 +112,6 @@ function insideRange(window: DateWindow, minDate?: string, maxDate?: string): bo
  */
 export function isComparisonAvailable(previous: DateWindow, span: DataSpan | null): boolean {
   return span !== null && previous.startDate >= span.minDate;
-}
-
-/**
- * WP23-87 AC 5.2: whether the app hides a comparison the ticket allows — known defect WP23-213
- * D-1. The app shows a comparison only when the previous window is inside the `minDate`/`maxDate`
- * it sends (on this environment a today−90 fallback, not the data). Used only to label the
- * failure; the expected values always come from `isComparisonAvailable`.
- */
-export function comparisonHiddenByGate(
-  previous: DateWindow,
-  span: DataSpan | null,
-  boardRange: { minDate?: string; maxDate?: string },
-): boolean {
-  return (
-    isComparisonAvailable(previous, span) &&
-    !insideRange(previous, boardRange.minDate, boardRange.maxDate)
-  );
-}
-
-/**
- * WP23-87 AC 2 / AC 5.2, the WP23-377 symptom: the tiles show the right headline figures but no
- * comparison where one is expected (no delta, no "vs …" caption, so a neutral graph). True only
- * when that is the sole difference, so a wrong number is never put down to the known defect.
- * Used only to label the failure.
- */
-export function onlyComparisonMissing(
-  shown: readonly SummaryTileReading[],
-  expected: readonly SummaryTileReading[],
-): boolean {
-  return (
-    shown.length === expected.length &&
-    expected.some((tile) => tile.delta !== null) &&
-    shown.every((tile, index) => {
-      const want = expected[index]!;
-      return (
-        tile.label === want.label &&
-        tile.value === want.value &&
-        tile.delta === null &&
-        tile.comparisonLabel === null &&
-        tile.sparklineLabel === SPARKLINE_LABEL.neutral
-      );
-    })
-  );
 }
 
 /**
@@ -219,7 +171,6 @@ export function expectedSummaryTileReadings(
 /**
  * WP23-87 AC 1–3 and AC 5 for one window, from the warehouse: the four tiles the board should
  * show, whether AC 5 allows a comparison, and the previous window and data span that decided it
- * (the inputs `comparisonHiddenByGate` needs to label WP23-377).
  */
 export async function expectedSummaryForWindow(
   repository: Pick<SourceToHireRepository, 'getSummary' | 'getDataSpan'>,

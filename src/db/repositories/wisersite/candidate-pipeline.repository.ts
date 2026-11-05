@@ -54,7 +54,9 @@ export class CandidatePipelineRepository {
   /**
    * WP23-93 AC 1.3.1: the first day the chart's data has any row — the history a comparison can
    * reach back to. The chart loads the last 36 months only, so that is the floor (AC silent on
-   * "sufficient history": per app `getPipelineTrend.ts:43`). `null` when there is none.
+   * "sufficient history": per app `getPipelineTrend.ts:43`). `CURRENT_DATE` on purpose: the app
+   * computes that range in this same database, so the floor matches the chart's even when the
+   * user's date differs. `null` when there is none.
    */
   async getFirstStatusVolumeDay(): Promise<string | null> {
     const row = await this.db.queryOne<{ first_day: string | null }>(
@@ -92,11 +94,12 @@ export class CandidatePipelineRepository {
   }
 
   /**
-   * Every calendar month fully in the past, newest first: its rejected applications split by
+   * Every calendar month fully before `today` (the user's date, like the windows the tests set),
+   * newest first: its rejected applications split by
    * whether they were rejected by the month's end. Lets a test pick a past window where the
    * WP23-328 rule ("rejected by the window's end") changes the result.
    */
-  async getMonthlyRejectionCap(): Promise<MonthlyRejectionCap[]> {
+  async getMonthlyRejectionCap(today: string): Promise<MonthlyRejectionCap[]> {
     const rows = await this.db.query<Record<string, unknown>>(
       `WITH apps AS (
          SELECT
@@ -107,7 +110,7 @@ export class CandidatePipelineRepository {
          FROM ${ATS_APPLICATIONS_TABLE}
          WHERE is_rejected
            AND NOT is_deleted
-           AND application_created_date < date_trunc('month', CURRENT_DATE)
+           AND application_created_date < date_trunc('month', $1::date)
        )
        SELECT
          to_char(month, 'YYYY-MM-DD') AS month,
@@ -116,6 +119,7 @@ export class CandidatePipelineRepository {
        FROM apps
        GROUP BY month
        ORDER BY month DESC`,
+      [today],
     );
     return rows.map((row) => ({
       month: String(row.month),

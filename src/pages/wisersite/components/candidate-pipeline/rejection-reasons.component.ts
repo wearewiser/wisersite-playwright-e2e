@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { widgetCard } from '../../../../utils/dom/widget-card';
 import {
   PIPELINE_WIDGET_HEADINGS,
   REJECTION_REASONS_EMPTY_MESSAGE,
@@ -39,9 +40,7 @@ export class RejectionReasonsWidget {
       name: PIPELINE_WIDGET_HEADINGS.rejectionReasons,
       exact: true,
     });
-    this.root = this.heading.locator(
-      `xpath=ancestor::*[.//table or .//p[normalize-space()="${REJECTION_REASONS_EMPTY_MESSAGE}"]][1]`,
-    );
+    this.root = widgetCard(this.heading);
     this.table = this.root.getByRole('table');
     this.emptyState = this.root.getByText(REJECTION_REASONS_EMPTY_MESSAGE, { exact: true });
     this.content = this.table.or(this.emptyState);

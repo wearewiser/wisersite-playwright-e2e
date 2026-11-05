@@ -14,10 +14,10 @@ import {
   expectedFilteredReading,
   pipelineBySourceReading,
   pipelineSourceFilterOptions,
+  presetWithMostSources,
   rowsShownStatus,
   sortPipelineSources,
   topPipelineSources,
-  windowWithMostSources,
 } from '../../../src/expectations/wisersite/pipeline-by-source.expectations';
 import { pastMonthWhereRejectionCapMatters } from '../../../src/expectations/wisersite/rejection-reasons.expectations';
 import { CandidatePipelinePage } from '../../../src/pages/wisersite/candidate-pipeline.page';
@@ -26,7 +26,7 @@ import {
   markKnownDefect,
   markLimitedByData,
 } from '../../../src/utils/playwright/test-annotations';
-import { resolveGlobalPreset } from '../../../src/utils/wisersite/date-window';
+import { localTodayIso, resolveGlobalPreset } from '../../../src/utils/wisersite/date-window';
 
 /**
  * WP23-198 — Candidate Pipeline > Pipeline by Source.
@@ -37,8 +37,8 @@ import { resolveGlobalPreset } from '../../../src/utils/wisersite/date-window';
  * confirmed / applied (2.1.8); AC 2.2 sortable by any column, default applications high to low;
  * AC 2.3 filterable to one source.
  *
- * Test plan S-198-*; D-7 (confirmed = hired), D-8 (one interview stage), D-9 (unknown-stage
- * applications), D-10 (Total = rows shown).
+ * Test plan S-198-*; D-7 (confirmed = hired), D-8 (one interview stage), D-10 (Total = rows
+ * shown). D-9 (unknown-stage applications left out of Applied) was fixed as WP23-502.
  */
 
 test.describe('WP23-198 Pipeline by Source', () => {
@@ -179,32 +179,14 @@ test.describe('WP23-198 Pipeline by Source', () => {
     async ({ candidatePipelinePage, candidatePipelineRepository }) => {
       const { pipelineBySource } = candidatePipelinePage;
       await candidatePipelinePage.waitForCharts();
-      // The preset with the most rows, among those without unknown-stage applications (D-9).
-      const pick = windowWithMostSources(
-        await Promise.all(
-          GLOBAL_PRESETS.map(async (preset) => {
-            const window = resolveGlobalPreset(preset);
-            return {
-              preset,
-              top: topPipelineSources(
-                await candidatePipelineRepository.getPipelineBySource(
-                  window.startDate,
-                  window.endDate,
-                ),
-              ),
-            };
-          }),
-        ),
-      );
+      // The preset whose table shows the most sources (null when no preset has any).
+      const pick = await presetWithMostSources(candidatePipelineRepository);
       test.skip(
         !pick || pick.top.length < 2,
-        'No date preset has two or more sources (without unknown-stage applications): nothing to sort.',
+        'No date preset has two or more sources: nothing to sort.',
       );
       await candidatePipelinePage.selectGlobalDatePreset(pick!.preset);
-      const range = resolveGlobalPreset(pick!.preset);
-      const top = topPipelineSources(
-        await candidatePipelineRepository.getPipelineBySource(range.startDate, range.endDate),
-      );
+      const { window: range, top } = pick!;
       console.log('Sorting on %s %o: %d sources', pick!.preset, range, top.length);
       const flatColumns = columnsWithoutVariation(top);
       if (flatColumns.length > 0) {
@@ -243,29 +225,11 @@ test.describe('WP23-198 Pipeline by Source', () => {
     async ({ candidatePipelinePage, candidatePipelineRepository }) => {
       const { pipelineBySource } = candidatePipelinePage;
       await candidatePipelinePage.waitForCharts();
-      // Same pick as S-198-03: the most sources, without unknown-stage applications (D-9).
-      const pick = windowWithMostSources(
-        await Promise.all(
-          GLOBAL_PRESETS.map(async (preset) => {
-            const window = resolveGlobalPreset(preset);
-            return {
-              preset,
-              top: topPipelineSources(
-                await candidatePipelineRepository.getPipelineBySource(
-                  window.startDate,
-                  window.endDate,
-                ),
-              ),
-            };
-          }),
-        ),
-      );
-      test.skip(!pick, 'No date preset has sources without unknown-stage applications.');
+      // The preset whose table shows the most sources (null when no preset has any).
+      const pick = await presetWithMostSources(candidatePipelineRepository);
+      test.skip(!pick, 'No date preset has any source in Pipeline by Source: nothing to filter.');
       await candidatePipelinePage.selectGlobalDatePreset(pick!.preset);
-      const range = resolveGlobalPreset(pick!.preset);
-      const top = topPipelineSources(
-        await candidatePipelineRepository.getPipelineBySource(range.startDate, range.endDate),
-      );
+      const { window: range, top } = pick!;
       console.log('Filtering on %s %o: %d sources', pick!.preset, range, top.length);
       await expect
         .poll(() => pipelineBySource.readReading(), { timeout: WIDGET_TIMEOUT_MS })
@@ -368,7 +332,7 @@ test.describe('WP23-198 Pipeline by Source', () => {
       const { pipelineBySource } = candidatePipelinePage;
       await candidatePipelinePage.waitForCharts();
       const window = pastMonthWhereRejectionCapMatters(
-        await candidatePipelineRepository.getMonthlyRejectionCap(),
+        await candidatePipelineRepository.getMonthlyRejectionCap(localTodayIso()),
       );
       test.skip(
         window === null,

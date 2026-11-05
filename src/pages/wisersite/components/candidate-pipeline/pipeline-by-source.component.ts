@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { widgetCard } from '../../../../utils/dom/widget-card';
 import {
   NO_FILTER_RESULTS_MESSAGE,
   PIPELINE_WIDGET_HEADINGS,
@@ -32,7 +33,7 @@ export class PipelineBySourceWidget {
       name: PIPELINE_WIDGET_HEADINGS.pipelineBySource,
       exact: true,
     });
-    this.root = this.heading.locator('xpath=ancestor::*[.//table][1]');
+    this.root = widgetCard(this.heading);
     this.table = this.root.getByRole('table', {
       name: PIPELINE_WIDGET_HEADINGS.pipelineBySource,
       exact: true,
