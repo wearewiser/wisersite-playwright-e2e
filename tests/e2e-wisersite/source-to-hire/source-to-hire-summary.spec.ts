@@ -9,10 +9,8 @@ import { KNOWN_DEFECTS } from '../../../src/constants/wisersite/known-defects.co
 import {
   SPARKLINE_LABEL,
   TREND_TONE,
-  comparisonHiddenByGate,
   expectedSummaryForWindow,
   formatHirePeriod,
-  onlyComparisonMissing,
   trendStateFor,
   type TrendState,
 } from '../../../src/expectations/wisersite/summary-tiles.expectations';
@@ -26,7 +24,6 @@ import {
 import {
   applicationsChangePct,
   findComparisonWindow,
-  intersectRanges,
   type WindowTotals,
 } from '../../../src/utils/wisersite/comparison-window';
 import {
@@ -44,9 +41,8 @@ import {
  * the selected window or the one before it falls outside the tenant's data, and "no change"
  * reads 0% / neutral.
  *
- * "Available data" (AC 5) is the warehouse's first to last application date. Where the app's
- * own gate (today−90 fallback range) gives a different answer, the test fails and is labelled
- * `known-defect: WP23-377` (register row WP23-213 D-1).
+ * "Available data" (AC 5) is the warehouse's first to last application date. (The app used to
+ * gate the comparison on a today−90 fallback range instead: WP23-377, fixed 2026-11-05.)
  */
 
 test.describe('WP23-87 Source to Hire summary statistics', () => {
@@ -146,29 +142,16 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
       expect(await sourceToHirePage.dateRange.getActiveRange()).toEqual({ startDate, endDate });
 
       const activeRange = { startDate, endDate };
-      const {
-        expected,
-        comparisonAvailable,
-        previous,
-        span: dataSpan,
-      } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, 'custom');
+      const { expected, comparisonAvailable } = await expectedSummaryForWindow(
+        sourceToHireRepository,
+        activeRange,
+        'custom',
+      );
       await widgetRequests.waitForWindow('sourceToHireSummary', activeRange);
       console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
-      try {
-        await expect
-          .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
-          .toEqual(expected);
-      } catch (error) {
-        // oracle-ok: the board's bounds only decide the WP23-377 label, never an expected value.
-        const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
-        if (
-          comparisonHiddenByGate(previous, dataSpan, boardRange) &&
-          onlyComparisonMissing(await sourceToHirePage.summary.readTiles(), expected)
-        ) {
-          markKnownDefect(KNOWN_DEFECTS.comparisonGate);
-        }
-        throw error;
-      }
+      await expect
+        .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
+        .toEqual(expected);
       expect(comparisonAvailable).toBe(true);
     },
   );
@@ -195,29 +178,16 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
       await sourceToHirePage.setCustomGlobalDateRange(startDate, endDate);
 
       const activeRange = { startDate, endDate };
-      const {
-        expected,
-        comparisonAvailable,
-        previous,
-        span: dataSpan,
-      } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, 'custom');
+      const { expected, comparisonAvailable } = await expectedSummaryForWindow(
+        sourceToHireRepository,
+        activeRange,
+        'custom',
+      );
       await widgetRequests.waitForWindow('sourceToHireSummary', activeRange);
       console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
-      try {
-        await expect
-          .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
-          .toEqual(expected);
-      } catch (error) {
-        // oracle-ok: the board's bounds only decide the WP23-377 label, never an expected value.
-        const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
-        if (
-          comparisonHiddenByGate(previous, dataSpan, boardRange) &&
-          onlyComparisonMissing(await sourceToHirePage.summary.readTiles(), expected)
-        ) {
-          markKnownDefect(KNOWN_DEFECTS.comparisonGate);
-        }
-        throw error;
-      }
+      await expect
+        .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
+        .toEqual(expected);
       expect(comparisonAvailable).toBe(false);
       for (const tile of await sourceToHirePage.summary.readTiles()) {
         expect(tile.delta, `${tile.label} should show no comparison`).toBeNull();
@@ -227,9 +197,8 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
     },
   );
 
-  // AC 3: one custom range per colour band of Total Applications, chosen from the warehouse.
-  // Both periods must sit inside the data and inside the board's range, so WP23-377 doesn't
-  // decide the outcome and the band itself is what gets checked.
+  // AC 3: one custom range per colour band of Total Applications, chosen from the warehouse:
+  // both periods inside the data, so the comparison shows and the band itself is checked.
   const BANDS: {
     band: TrendState;
     colour: string;
@@ -265,16 +234,8 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
       }),
       async ({ sourceToHirePage, widgetRequests, sourceToHireRepository }) => {
         await sourceToHirePage.summary.waitForLoaded();
-        const span = await sourceToHireRepository.getDataSpan();
-        // oracle-ok: the board's bounds only narrow where a window is picked, so WP23-377
-        // can't decide the outcome; expected values still come from the warehouse.
-        const { minDate, maxDate } = await widgetRequests.waitForLast('sourceToHireSummary');
-        const bounds =
-          span && minDate && maxDate ? intersectRanges(span, { minDate, maxDate }) : null;
-        test.skip(
-          !bounds,
-          `The warehouse data (${span?.minDate}..${span?.maxDate}) and the board's range (${minDate}..${maxDate}) don't overlap.`,
-        );
+        const bounds = await sourceToHireRepository.getDataSpan();
+        test.skip(!bounds, 'The warehouse has no applications, so there is no range to pick.');
         const window = findComparisonWindow({
           days: await sourceToHireRepository.getDailyCounts(bounds!.minDate, bounds!.maxDate),
           bounds: bounds!,
@@ -287,29 +248,16 @@ test.describe('WP23-87 Source to Hire summary statistics', () => {
 
         await sourceToHirePage.setCustomGlobalDateRange(window!.startDate, window!.endDate);
         const activeRange = window!;
-        const {
-          expected,
-          comparisonAvailable,
-          previous,
-          span: dataSpan,
-        } = await expectedSummaryForWindow(sourceToHireRepository, activeRange, 'custom');
+        const { expected, comparisonAvailable } = await expectedSummaryForWindow(
+          sourceToHireRepository,
+          activeRange,
+          'custom',
+        );
         await widgetRequests.waitForWindow('sourceToHireSummary', activeRange);
         console.log('Summary tiles %o vs SQL-derived (expected):', activeRange, expected);
-        try {
-          await expect
-            .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
-            .toEqual(expected);
-        } catch (error) {
-          // oracle-ok: the board's bounds only decide the WP23-377 label, never an expected value.
-          const boardRange = await widgetRequests.waitForLast('sourceToHireSummary');
-          if (
-            comparisonHiddenByGate(previous, dataSpan, boardRange) &&
-            onlyComparisonMissing(await sourceToHirePage.summary.readTiles(), expected)
-          ) {
-            markKnownDefect(KNOWN_DEFECTS.comparisonGate);
-          }
-          throw error;
-        }
+        await expect
+          .poll(() => sourceToHirePage.summary.readTiles(), { timeout: WIDGET_TIMEOUT_MS })
+          .toEqual(expected);
         expect(comparisonAvailable).toBe(true);
         const applications = (await sourceToHirePage.summary.readTiles())[0]!;
         expect(applications.tone).toBe(TREND_TONE[band]);

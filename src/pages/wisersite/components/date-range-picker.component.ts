@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import type { DateWindow, GlobalPresetLabel } from '../../../types/wisersite/source-to-hire.types';
 import {
   formatDisplayDate,
@@ -59,7 +59,7 @@ export class DateRangePicker {
 
   async open(): Promise<void> {
     await this.trigger.click();
-    await expect(this.popover).toBeVisible();
+    await this.popover.waitFor({ state: 'visible' });
   }
 
   async apply(): Promise<void> {
@@ -78,9 +78,10 @@ export class DateRangePicker {
     await this.open();
     await this.pickDay(startDate);
     await this.pickDay(endDate);
-    await expect(this.popover).toContainText(
-      `${formatDisplayDate(startDate)} – ${formatDisplayDate(endDate)}`,
-    );
+    // The popover echoes the picked range once both days have registered.
+    await this.popover
+      .filter({ hasText: `${formatDisplayDate(startDate)} – ${formatDisplayDate(endDate)}` })
+      .waitFor({ state: 'visible' });
     await this.apply();
   }
 

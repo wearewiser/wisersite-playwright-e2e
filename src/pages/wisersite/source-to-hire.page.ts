@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   FIRST_LOAD_TIMEOUT_MS,
   SOURCE_TO_HIRE_PATH,
@@ -45,13 +45,13 @@ export class SourceToHirePage extends BasePage {
   /** Waits for the board's heading — Next.js dev mode compiles the route on its first hit. */
   override async goto(queryString = ''): Promise<void> {
     await super.goto(queryString);
-    await expect(this.heading).toBeVisible({ timeout: FIRST_LOAD_TIMEOUT_MS });
+    await this.heading.waitFor({ state: 'visible', timeout: FIRST_LOAD_TIMEOUT_MS });
   }
 
   /** Reaches the board the way a user would: Analytics → Source to Hire in the sidebar. */
   async openFromSidebar(): Promise<void> {
     await this.sidebar.navigateTo('Analytics', 'Source to Hire');
-    await expect(this.page).toHaveURL(new RegExp(`${SOURCE_TO_HIRE_PATH}$`), {
+    await this.page.waitForURL(new RegExp(`${SOURCE_TO_HIRE_PATH}$`), {
       timeout: FIRST_LOAD_TIMEOUT_MS,
     });
   }

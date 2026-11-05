@@ -1,4 +1,5 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import { widgetCard } from '../../../../utils/dom/widget-card';
 import {
   WIDGET_HEADINGS,
   WIDGET_TIMEOUT_MS,
@@ -34,7 +35,7 @@ export class ApplicationsBySourceWidget {
       name: WIDGET_HEADINGS.applicationsBySource,
       exact: true,
     });
-    this.root = this.heading.locator('xpath=ancestor::*[.//table][1]');
+    this.root = widgetCard(this.heading);
     this.subtitle = this.root.getByText('Top 6 sources', { exact: true });
     this.legendItems = this.root.getByRole('list', { name: 'Legend' }).getByRole('listitem');
     this.controls = this.root.getByRole('combobox');
@@ -51,9 +52,12 @@ export class ApplicationsBySourceWidget {
 
   /** Waits for real data rows — [bar, applications, hire rate] — rather than a loading state. */
   async waitForRows(): Promise<void> {
-    await expect(this.rows.first().getByRole('cell')).toHaveCount(3, {
-      timeout: WIDGET_TIMEOUT_MS,
-    });
+    // A data row has all 3 cells; a loading row has fewer.
+    await this.rows
+      .first()
+      .getByRole('cell')
+      .nth(2)
+      .waitFor({ state: 'attached', timeout: WIDGET_TIMEOUT_MS });
   }
 
   /** Rows in the order shown. */

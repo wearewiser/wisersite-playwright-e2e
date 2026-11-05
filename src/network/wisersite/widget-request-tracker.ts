@@ -57,9 +57,10 @@ export class WidgetRequestTracker {
   }
 
   /**
-   * Waits for `key`'s latest request to be for `window` (its start and end dates). Proves the
-   * widget fetched the window the test expects, whatever the date button's text says (WP23-419
-   * D-3). The window itself must come from the test (a preset on the user's calendar, or the
+   * Waits for `key`'s latest request to be for `window` (its start and end dates) and for its
+   * response to have arrived. Proves the widget fetched the window the test expects, whatever
+   * the date button's text says (WP23-419 D-3), and that what it renders next is that window's
+   * data. The window itself must come from the test (a preset on the user's calendar, or the
    * custom range it set), never from this request.
    */
   async waitForWindow(
@@ -70,8 +71,9 @@ export class WidgetRequestTracker {
     await expect
       .poll(
         () => {
-          const params = this.last(key);
-          return params && { startDate: params.startDate, endDate: params.endDate };
+          const latest = [...this.requests].reverse().find((entry) => entry.key === key);
+          if (!latest || !this.settled.has(latest.request)) return undefined;
+          return { startDate: latest.params.startDate, endDate: latest.params.endDate };
         },
         { timeout, message: `"${key}" request window` },
       )
