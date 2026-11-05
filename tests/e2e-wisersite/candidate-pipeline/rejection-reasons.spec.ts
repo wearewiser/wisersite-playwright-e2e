@@ -91,7 +91,7 @@ test.describe('WP23-94 Rejection Reasons', () => {
       title: 'A period without rejections shows “No data”',
       what: 'Picks dates in which the database has no rejections and checks the chart says “No data”.',
     }),
-    async ({ candidatePipelinePage, candidatePipelineRepository }) => {
+    async ({ candidatePipelinePage, widgetRequests, candidatePipelineRepository }) => {
       const { rejectionReasons } = candidatePipelinePage;
       await candidatePipelinePage.waitForCharts();
       const today = localTodayIso();
@@ -115,6 +115,8 @@ test.describe('WP23-94 Rejection Reasons', () => {
       expect(total, 'rejections in the chosen window, by SQL').toBe(0);
 
       await candidatePipelinePage.setCustomGlobalDateRange(window!.startDate, window!.endDate);
+      // The empty state alone would also match a chart still showing an earlier empty period.
+      await widgetRequests.waitForWindow(PIPELINE_WIDGET_KEYS.rejectionReasons, window!);
       await expect(rejectionReasons.emptyState).toBeVisible({ timeout: WIDGET_TIMEOUT_MS });
     },
   );
