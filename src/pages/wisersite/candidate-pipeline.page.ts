@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   CANDIDATE_PIPELINE_HEADING,
   CANDIDATE_PIPELINE_NAV,
@@ -44,7 +44,7 @@ export class CandidatePipelinePage extends BasePage {
   /** Waits for the heading: Next.js dev mode compiles the route on its first hit. */
   override async goto(queryString = ''): Promise<void> {
     await super.goto(queryString);
-    await expect(this.heading).toBeVisible({ timeout: FIRST_LOAD_TIMEOUT_MS });
+    await this.heading.waitFor({ state: 'visible', timeout: FIRST_LOAD_TIMEOUT_MS });
   }
 
   /** Reaches the board the way a user would: Analytics → Pipeline in the sidebar. */
@@ -61,15 +61,18 @@ export class CandidatePipelinePage extends BasePage {
   /** Clicks the (revealed) Pipeline entry: "the page being selected". */
   async selectSidebarEntry(): Promise<void> {
     await this.sidebar.clickLink(CANDIDATE_PIPELINE_NAV.group, CANDIDATE_PIPELINE_NAV.link);
-    await expect(this.page).toHaveURL(new RegExp(`${CANDIDATE_PIPELINE_PATH}$`), {
+    await this.page.waitForURL(new RegExp(`${CANDIDATE_PIPELINE_PATH}$`), {
       timeout: FIRST_LOAD_TIMEOUT_MS,
     });
   }
 
   /** Waits until both charts have rendered something (data or their empty state). */
   async waitForCharts(): Promise<void> {
-    await expect(this.pipelineTrend.content).toBeVisible({ timeout: FIRST_LOAD_TIMEOUT_MS });
-    await expect(this.rejectionReasons.content).toBeVisible({ timeout: FIRST_LOAD_TIMEOUT_MS });
+    await this.pipelineTrend.content.waitFor({ state: 'visible', timeout: FIRST_LOAD_TIMEOUT_MS });
+    await this.rejectionReasons.content.waitFor({
+      state: 'visible',
+      timeout: FIRST_LOAD_TIMEOUT_MS,
+    });
   }
 
   /** Applies a global preset. Widgets refetch afterwards; read them with a poll. */

@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { WIDGET_HEADINGS } from '../../../../constants/wisersite/source-to-hire.constants';
 import type { HireDistributionSegment } from '../../../../types/wisersite/source-to-hire.types';
 import { ownHitPoint } from '../../../../utils/dom/hit-point';
@@ -77,8 +77,12 @@ export class HireDistributionWidget {
     await this.segments.nth(index).hover({ position });
   }
 
-  async readCentreReadout(): Promise<{ value: string; caption: string }> {
-    await expect(this.centreReadout).toBeVisible();
+  /**
+   * The centre readout while a segment is hovered; `null` until it shows. Read it with a poll,
+   * so the wait lives in the spec.
+   */
+  async readCentreReadout(): Promise<{ value: string; caption: string } | null> {
+    if (!(await this.centreReadout.isVisible())) return null;
     const [value, caption] = await this.centreReadout.locator('span').allTextContents();
     return { value: (value ?? '').trim(), caption: (caption ?? '').trim() };
   }

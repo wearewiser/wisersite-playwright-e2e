@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   NO_DATA_MESSAGE,
   WIDGET_HEADINGS,
@@ -91,9 +91,12 @@ export class HiresTrendBySourceWidget {
     });
   }
 
-  /** The hover tooltip: the month it refers to and one `label -> value` per series. */
-  async readTooltip(): Promise<{ month: string; rows: Record<string, string> }> {
-    await expect(this.tooltip).toBeVisible();
+  /**
+   * The hover tooltip: the month it refers to and one `label -> value` per series; `null` until
+   * it shows. Read it with a poll, so the wait lives in the spec.
+   */
+  async readTooltip(): Promise<{ month: string; rows: Record<string, string> } | null> {
+    if (!(await this.tooltip.isVisible())) return null;
     const paragraphs = this.tooltip.locator('p');
     // First paragraph is the month; each one after it is a series row: [chip] [label] [value].
     const seriesRows = await paragraphs.evaluateAll((all) =>

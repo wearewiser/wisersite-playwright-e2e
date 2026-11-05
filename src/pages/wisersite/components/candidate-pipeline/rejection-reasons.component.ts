@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   PIPELINE_WIDGET_HEADINGS,
   REJECTION_REASONS_EMPTY_MESSAGE,
@@ -82,8 +82,12 @@ export class RejectionReasonsWidget {
     await segment.hover({ position });
   }
 
-  async readCentreReadout(): Promise<CentreReadout> {
-    await expect(this.centreReadout).toBeVisible();
+  /**
+   * The centre readout while a segment is hovered; `null` until it shows. Read it with a poll,
+   * so the wait lives in the spec.
+   */
+  async readCentreReadout(): Promise<CentreReadout | null> {
+    if (!(await this.centreReadout.isVisible())) return null;
     const [value, caption] = await this.centreReadout.locator('span').allTextContents();
     return { value: (value ?? '').trim(), caption: (caption ?? '').trim() };
   }

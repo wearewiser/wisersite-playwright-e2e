@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   BADGE_TONE_COLOUR_TOKENS,
   LOADING_PLACEHOLDER,
@@ -78,9 +78,9 @@ export class SummaryKpiRow {
 
   /** Waits until the tiles have replaced their "—" loading placeholders with real data. */
   async waitForLoaded(): Promise<void> {
-    await expect(this.applications.value).not.toHaveText(LOADING_PLACEHOLDER, {
-      timeout: WIDGET_TIMEOUT_MS,
-    });
+    await this.applications.value
+      .filter({ hasNotText: new RegExp(`^\\s*${LOADING_PLACEHOLDER}\\s*$`) })
+      .waitFor({ state: 'visible', timeout: WIDGET_TIMEOUT_MS });
   }
 
   async readTiles(): Promise<SummaryTileReading[]> {
