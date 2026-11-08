@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 /**
  * The Payload admin sidebar (the app's custom Nav override) — shared by every admin page, so
@@ -28,7 +28,7 @@ export class AdminSidebar {
   async open(): Promise<void> {
     if (await this.openMenuButton.isVisible()) {
       await this.openMenuButton.click();
-      await expect(this.closeMenuButton).toBeVisible();
+      await this.closeMenuButton.waitFor({ state: 'visible' });
     }
   }
 
@@ -44,7 +44,7 @@ export class AdminSidebar {
     await this.group(label)
       .getByRole('button', { name: new RegExp(`^(Expand )?${label}$`) })
       .click();
-    await expect(link).toBeVisible();
+    await link.waitFor({ state: 'visible' });
   }
 
   /** Opens the rail, expands `groupLabel`, and clicks its `linkLabel` entry. */

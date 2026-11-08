@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   NO_SOURCE_DATA_MESSAGE,
   WIDGET_HEADINGS,
@@ -59,9 +59,12 @@ export class SourcePerformanceBreakdownWidget {
    * weaker wait and vanish before the read.
    */
   async waitForRows(): Promise<void> {
-    await expect(this.bodyRows.first().getByRole('cell')).toHaveCount(5, {
-      timeout: WIDGET_TIMEOUT_MS,
-    });
+    // A data row has all 5 cells; a loading or empty row has fewer.
+    await this.bodyRows
+      .first()
+      .getByRole('cell')
+      .nth(4)
+      .waitFor({ state: 'attached', timeout: WIDGET_TIMEOUT_MS });
   }
 
   async readColumnHeaders(): Promise<string[]> {
