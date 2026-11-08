@@ -6,6 +6,8 @@ export type WidgetRequestParams = {
   endDate?: string;
   minDate?: string;
   maxDate?: string;
+  /** `1` when the Recruitment Funnel asks for its weekly conversion series alone. */
+  weekly?: string;
 };
 
 /**

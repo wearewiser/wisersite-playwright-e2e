@@ -4,8 +4,10 @@ import { TenantSqlClient } from '../db/wisersite-db-client';
 import { SourceToHireRepository } from '../db/repositories/wisersite/source-to-hire.repository';
 import { HiresTrendRepository } from '../db/repositories/wisersite/hires-trend.repository';
 import { CandidatePipelineRepository } from '../db/repositories/wisersite/candidate-pipeline.repository';
+import { RecruitmentFunnelRepository } from '../db/repositories/wisersite/recruitment-funnel.repository';
 import { WidgetRequestTracker } from '../network/wisersite/widget-request-tracker';
 import { AdminLoginPage } from '../pages/wisersite/admin-login.page';
+import { RecruitmentFunnelPage } from '../pages/wisersite/recruitment-funnel.page';
 import { SourceToHirePage } from '../pages/wisersite/source-to-hire.page';
 import { CandidatePipelinePage } from '../pages/wisersite/candidate-pipeline.page';
 
@@ -14,6 +16,7 @@ type WorkerFixtures = {
   sourceToHireRepository: SourceToHireRepository;
   hiresTrendRepository: HiresTrendRepository;
   candidatePipelineRepository: CandidatePipelineRepository;
+  recruitmentFunnelRepository: RecruitmentFunnelRepository;
 };
 
 type TestFixtures = {
@@ -24,6 +27,8 @@ type TestFixtures = {
   sourceToHirePage: SourceToHirePage;
   /** The Candidate Pipeline board, opened by URL, heading visible. */
   candidatePipelinePage: CandidatePipelinePage;
+  /** The Recruitment Funnel board, opened (epic WP23-61). */
+  recruitmentFunnelPage: RecruitmentFunnelPage;
 };
 
 /**
@@ -63,6 +68,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     { scope: 'worker' },
   ],
 
+  recruitmentFunnelRepository: [
+    async ({ tenantSql }, use) => {
+      await use(new RecruitmentFunnelRepository(tenantSql));
+    },
+    { scope: 'worker' },
+  ],
+
   widgetRequests: async ({ page }, use) => {
     await use(new WidgetRequestTracker(page));
   },
@@ -85,6 +97,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     const candidatePipelinePage = new CandidatePipelinePage(adminPage);
     await candidatePipelinePage.goto();
     await use(candidatePipelinePage);
+  },
+
+  // Depends on `widgetRequests` so the tracker is listening before the board's first fetches.
+  recruitmentFunnelPage: async ({ adminPage, widgetRequests: _widgetRequests }, use) => {
+    const recruitmentFunnelPage = new RecruitmentFunnelPage(adminPage);
+    await recruitmentFunnelPage.goto();
+    await use(recruitmentFunnelPage);
   },
 });
 
