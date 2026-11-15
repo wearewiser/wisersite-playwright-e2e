@@ -80,8 +80,8 @@ export type ExpectedStageHover = {
 /** Stage-flow text a stage should show, per the ACs. */
 export type ExpectedStageFlow = {
   stage: string;
-  /** % arrived from the previous stage; null for Reach (no %). */
-  arrived: string | null;
+  /** Exact % arrived from the previous stage (unrounded); null where none is shown ("—", Reach). */
+  arrivedPercent: number | null;
   fromPrevious: string;
   drop: string;
   cumulative: string;
@@ -105,9 +105,3 @@ export type SourcePerformanceRow = {
 
 /** What a headline tile shows; null when the tile is absent. */
 export type HeadlineTileReading = { label: string; value: string; caption: string } | null;
-
-/** The weekly conversion chart of the full stage detail. */
-export type ConversionChartReading = {
-  heading: string;
-  weeks: { weekStart: string; percent: string }[];
-};

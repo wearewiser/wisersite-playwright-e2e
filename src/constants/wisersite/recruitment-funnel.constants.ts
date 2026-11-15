@@ -118,24 +118,21 @@ export const STALE_FEED_HOURS = 48;
  */
 export const HEADLINE_MIN_COHORT = 10;
 
-/** Weeks in the full stage detail's conversion chart (WP23-295 AC 6.1). */
-export const CONVERSION_CHART_WEEKS = 8;
-
 /** Individual sources listed per category before the rest fold into one row (AC silent: per app). */
 export const MAX_SUB_SOURCES = 5;
 export const OTHER_SUB_SOURCES_LABEL = 'Other sources';
 
 /**
- * App copy for stage states and banners. The tickets give no wording except WP23-86 AC 6 ("No
- * data for this period", D-12) and AC 2.1.1's "prompting the user to widen the date range";
- * the rest is the app's (AC silent), agreed in WP23-354 / WP23-358.
+ * App copy for stage states and banners. The tickets give no wording except WP23-86 AC 6 (its
+ * "No data for this period" was replaced by `zeroDetail`, accepted by the QA lead on 2026-11-12,
+ * D-12) and AC 2.1.1's "prompting the user to widen the date range"; the rest is the app's (AC
+ * silent), agreed in WP23-354 / WP23-358.
  */
 export const FUNNEL_COPY = {
-  /** WP23-86 AC 6's required wording for a stage with no candidates (D-12). */
-  noDataForPeriod: 'No data for this period',
   noValue: '—',
   noDataNote: 'No data',
   zeroNote: 'None at stage',
+  /** A stage with no candidates, on hover and pinned (WP23-86 AC 6 as accepted, D-12). */
   zeroDetail: 'Nobody reached this stage in these dates.',
   syncingDetail: 'Data unavailable while we re-sync this stage.',
   syncingBannerTitle: 'We’re just catching up',

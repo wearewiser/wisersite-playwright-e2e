@@ -75,8 +75,10 @@ Span, which presets have data, which measures are all zero, reachable edge cases
   key, or the register ID when it has no ticket).
 - **Performance and timing ACs** ("shown within 1 s", load times) are out of scope for this
   repo: list them in the matrix as "Not planned: no performance testing", with no scenario.
-- **Accepted defects** (listed under "Known defects accepted" in `docs/suspected-defects.md`)
-  get no scenario: note the AC as accepted, not tested.
+- **Accepted defects** (listed under "Known defects accepted" in `docs/suspected-defects.md`):
+  if the accepted behaviour is part of a main user flow and important to test, plan a scenario
+  that expects it (cite the acceptance); otherwise no scenario: note the AC as accepted, not
+  tested.
   Otherwise add a row to `docs/suspected-defects.md` (next `QA-<KEY>-<n>` ID) and label it
   `suspected-defect` (`markSuspectedDefect()`); put it first in the report as a suspected new
   defect

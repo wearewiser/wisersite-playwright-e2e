@@ -1,9 +1,6 @@
 import { devices } from '@playwright/test';
 import { expect, test } from '../../../src/fixtures/wisersite.fixtures';
-import {
-  KNOWN_DEFECTS,
-  SUSPECTED_DEFECTS,
-} from '../../../src/constants/wisersite/known-defects.constants';
+import { KNOWN_DEFECTS } from '../../../src/constants/wisersite/known-defects.constants';
 import {
   CHARTED_SOURCES,
   FUNNEL_COPY,
@@ -13,18 +10,20 @@ import {
 } from '../../../src/constants/wisersite/recruitment-funnel.constants';
 import { GLOBAL_PRESETS } from '../../../src/constants/wisersite/source-to-hire.constants';
 import {
-  arrivalExceedsWholeCohort,
+  ARRIVAL_TOLERANCE_PERCENT,
+  arrivalMismatch,
   expectedFunnelTable,
   expectedSourcePerformance,
   expectedStageFlows,
   expectedStageHovers,
+  expectedStageSummary,
+  firstExpandableSource,
   flowMismatches,
+  subSourceRows,
+  type FlowMismatch,
 } from '../../../src/expectations/wisersite/recruitment-funnel.expectations';
-import {
-  details,
-  markKnownDefect,
-  markSuspectedDefect,
-} from '../../../src/utils/playwright/test-annotations';
+import type { StageHoverPanel } from '../../../src/pages/wisersite/components/recruitment-funnel/stage-hover-panel.component';
+import { details, markKnownDefect } from '../../../src/utils/playwright/test-annotations';
 import { resolveGlobalPreset } from '../../../src/utils/wisersite/date-window';
 import { loadExpectedFunnel } from '../../../src/utils/wisersite/funnel-oracle';
 
@@ -36,13 +35,43 @@ import { loadExpectedFunnel } from '../../../src/utils/wisersite/funnel-oracle';
  * % arrived from the previous stage ("–" for Reach), source breakdown (count and share per
  * source) and stage flow (lost, % drop, cumulative drop, whole numbers). AC 2: clicking pins the
  * stage and its full detail until another stage is clicked; closing the detail returns to the
- * hover view. AC 3: source categories expand into individual sources and collapse again. AC 4.1:
- * touch devices tap instead of hovering. AC 6: a stage with no candidates says "No data for this
- * period". AC 4.2 (keyboard), AC 5 (timing) and AC 7 (permissions) aren't tested (plan D-11).
+ * hover view. AC 3: in the hover preview, source categories expand into individual sources and
+ * collapse again; the pinned full detail always lists every individual source, with no control
+ * (by design, WP23-591). AC 4.1: touch devices tap instead of hovering. AC 6: a stage with no
+ * candidates says "Nobody reached this stage in these dates." (accepted by the QA lead on
+ * 2026-11-12 in place of "No data for this period"). AC 4.2 (keyboard), AC 5 (timing) and AC 7 (permissions) aren't tested (plan D-11).
  */
 
 const FUNNEL = FUNNEL_WIDGET_KEYS.funnel;
-const ATS_STAGE_LABELS = FUNNEL_STAGES.filter((s) => s.feed === 'ats').map((s) => s.label);
+const CATEGORY_LABELS: readonly string[] = CHARTED_SOURCES.map((s) => s.label);
+
+/**
+ * WP23-86 AC 3: the hover preview of `stage` offers an expand control on `category`. Labelled
+ * WP23-591 only when the symptom is that defect's: the panel is open on that stage with the
+ * category listed, and it has no expand control of any kind (a missing panel, or a control in an
+ * unexpected place, fails unlabelled).
+ */
+async function expectHoverExpandControl(
+  panel: StageHoverPanel,
+  category: string,
+  stage: string,
+): Promise<void> {
+  try {
+    await expect(panel.expandControl(category)).toBeVisible();
+  } catch (error) {
+    const panelOpen =
+      (await panel.root.isVisible()) &&
+      ((await panel.heading.textContent()) ?? '').trim() === stage;
+    if (
+      panelOpen &&
+      (await panel.sourceItem(category).count()) > 0 &&
+      (await panel.expandControls.count()) === 0
+    ) {
+      markKnownDefect(KNOWN_DEFECTS.funnelHoverNoSourceExpand);
+    }
+    throw error;
+  }
+}
 
 test.describe('WP23-86 stage hover and pin', () => {
   // Every test starts on the last 12 months, with the funnel showing the warehouse's figures
@@ -124,11 +153,11 @@ test.describe('WP23-86 stage hover and pin', () => {
   );
 
   test(
-    'S-86-04 the % arrived from the previous stage is a whole number, "–" for Reach, never over 100%',
+    'S-86-04 the % arrived from the previous stage matches the database, "–" for Reach',
     details({
       ac: ['WP23-86 AC 1.4'],
       title: 'Hovering a stage shows the % arrived from the previous stage',
-      what: 'On the last 12 months, hovers each stage and checks the % of the previous stage that arrived here against the database: none for Reach, whole numbers, and never more than 100% between recruitment stages.',
+      what: 'On the last 12 months, hovers each stage and checks the % of the previous stage that arrived here against the database (within half a point, as the hover rounds it): none for Reach. It can be over 100% (PO, WP23-357).',
     }),
     async ({ recruitmentFunnelPage, recruitmentFunnelRepository }) => {
       const { funnel } = recruitmentFunnelPage;
@@ -136,8 +165,9 @@ test.describe('WP23-86 stage hover and pin', () => {
       const { stages } = await loadExpectedFunnel(recruitmentFunnelRepository, window);
       const flows = expectedStageFlows(stages);
 
-      const expected: { stage: string; arrival: string | null }[] = [];
-      const readings: { stage: string; arrival: string | null }[] = [];
+      const readings: { stage: string; shown: string | null; sql: string }[] = [];
+      const mismatches = new Set<FlowMismatch>();
+      const wrong: typeof readings = [];
       for (const [index, stage] of FUNNEL_STAGES.entries()) {
         const flow = flows[index];
         if (!flow) continue;
@@ -150,42 +180,34 @@ test.describe('WP23-86 stage hover and pin', () => {
           expect(arrival).toContain(FUNNEL_COPY.noValue);
           continue;
         }
-        const previous = FUNNEL_STAGES[index - 1]!.label;
-        readings.push({ stage: stage.label, arrival });
-        expected.push({
+        const { arrivedPercent } = flow;
+        const reading = {
           stage: stage.label,
-          arrival:
-            flow.arrived === FUNNEL_COPY.noValue
-              ? FUNNEL_COPY.noValue
-              : `${flow.arrived} arrived from ${previous}`,
-        });
+          shown: arrival,
+          sql: arrivedPercent === null ? FUNNEL_COPY.noValue : `${arrivedPercent.toFixed(2)}%`,
+        };
+        readings.push(reading);
+        const issue = arrivalMismatch(
+          stage.label,
+          arrival,
+          arrivedPercent,
+          FUNNEL_STAGES[index - 1]!.label,
+        );
+        if (issue) {
+          mismatches.add(issue);
+          wrong.push(reading);
+        }
       }
       console.log('Arrival lines: %o', readings);
 
       // Labels only when every difference is one a defect explains (else it's a new failure).
-      const mismatches = flowMismatches(readings, expected);
-      const explained = !mismatches.has('other');
-      if (explained && mismatches.has('careerSiteViewsDash')) {
-        markSuspectedDefect(SUSPECTED_DEFECTS.funnelCareerSiteViewsFlowDashed);
+      if (!mismatches.has('other') && mismatches.has('careerSiteViewsDash')) {
+        markKnownDefect(KNOWN_DEFECTS.funnelCareerSiteViewsFlowDashed);
       }
-      if (explained && mismatches.has('decimalUnderTen'))
-        markKnownDefect(KNOWN_DEFECTS.funnelHoverDecimals);
-      expect.soft(readings).toEqual(expected);
-
-      // AC 1.4 "% arriving from previous stage" can't pass 100% where both stages count the
-      // same applicants (D-4): ATS → ATS steps only.
-      for (const [index, stage] of FUNNEL_STAGES.entries()) {
-        const reading = readings.find((r) => r.stage === stage.label);
-        if (!reading || !ATS_STAGE_LABELS.includes(stage.label)) continue;
-        if (!ATS_STAGE_LABELS.includes(FUNNEL_STAGES[index - 1]!.label)) continue;
-        const shown = Number.parseFloat(reading.arrival ?? '');
-        if (shown > 100 && arrivalExceedsWholeCohort(stages, index)) {
-          markKnownDefect(KNOWN_DEFECTS.funnelArrivalOver100);
-        }
-        expect
-          .soft(shown, `${stage.label}: % arrived from the previous stage`)
-          .toBeLessThanOrEqual(100);
-      }
+      expect(
+        wrong,
+        `stages whose "% arrived" isn't "<SQL % ± ${ARRIVAL_TOLERANCE_PERCENT}> arrived from <previous stage>"`,
+      ).toEqual([]);
     },
   );
 
@@ -222,7 +244,7 @@ test.describe('WP23-86 stage hover and pin', () => {
       // Labels only when every difference is one a defect explains (else it's a new failure).
       const mismatches = flowMismatches(readings, expected);
       if (!mismatches.has('other') && mismatches.has('careerSiteViewsDash')) {
-        markSuspectedDefect(SUSPECTED_DEFECTS.funnelCareerSiteViewsFlowDashed);
+        markKnownDefect(KNOWN_DEFECTS.funnelCareerSiteViewsFlowDashed);
       }
       if (!mismatches.has('other') && mismatches.has('decimalUnderTen')) {
         markKnownDefect(KNOWN_DEFECTS.funnelHoverDecimals);
@@ -277,7 +299,7 @@ test.describe('WP23-86 stage hover and pin', () => {
         await expect(funnel.hoverPanel.heading).toHaveText('Passed Screening');
       } catch (error) {
         if ((await funnel.hoverPanel.root.count()) === 0) {
-          markSuspectedDefect(SUSPECTED_DEFECTS.funnelMouseCloseNoHover);
+          markKnownDefect(KNOWN_DEFECTS.funnelMouseCloseNoHover);
         }
         throw error;
       }
@@ -304,11 +326,11 @@ test.describe('WP23-86 stage hover and pin', () => {
   );
 
   test(
-    'S-86-09 a source category with several sources can be expanded to show each source',
+    'S-86-09 in the hover preview, a source category with several sources expands to show each source',
     details({
       ac: ['WP23-86 AC 3', 'WP23-86 AC 1.5.1'],
       title: 'A source can be expanded into its individual sources',
-      what: 'Opens a stage whose source has several individual sources, expands that source, and checks each individual source and its count against the database.',
+      what: 'Hovers a stage whose source has several individual sources, checks they are hidden at first, expands that source in the hover preview, and checks exactly those individual sources appear with their counts from the database.',
     }),
     async ({ recruitmentFunnelPage, recruitmentFunnelRepository }) => {
       const { funnel } = recruitmentFunnelPage;
@@ -317,11 +339,7 @@ test.describe('WP23-86 stage hover and pin', () => {
         recruitmentFunnelRepository,
         window,
       );
-      const target = FUNNEL_STAGES.flatMap((stage, index) =>
-        expectedSourcePerformance({ stages, index, applications, asOf: window.endDate })
-          .filter((row) => row.subSources.length >= 2)
-          .map((row) => ({ stage: stage.label, row })),
-      )[0];
+      const target = firstExpandableSource({ stages, applications, asOf: window.endDate });
       test.skip(
         !target,
         'No source has two or more individual sources at any stage in the last 12 months.',
@@ -333,32 +351,38 @@ test.describe('WP23-86 stage hover and pin', () => {
         target!.row.subSources,
       );
 
-      await funnel.pinStage(target!.stage);
-      await expect(funnel.detail.root).toHaveAccessibleName(`Full stage detail: ${target!.stage}`);
-      const expand = funnel.detail.expandControl(target!.row.source);
-      try {
-        await expect(expand).toBeVisible();
-      } catch (error) {
-        if ((await expand.count()) === 0)
-          markSuspectedDefect(SUSPECTED_DEFECTS.funnelNoSourceExpand);
-        throw error;
+      await funnel.hoverStage(target!.stage);
+      await expect(funnel.hoverPanel.heading).toHaveText(target!.stage);
+      const expand = funnel.hoverPanel.expandControl(target!.row.source);
+      await expectHoverExpandControl(funnel.hoverPanel, target!.row.source, target!.stage);
+      await expect(expand).toHaveAttribute('aria-expanded', 'false');
+      for (const sub of target!.row.subSources) {
+        await expect(funnel.hoverPanel.sourceItem(sub.source), `${sub.source} before`).toBeHidden();
       }
+
       await expand.click();
       await expect(expand).toHaveAttribute('aria-expanded', 'true');
-      const categories = CHARTED_SOURCES.map((s) => s.label);
-      const shown = (await funnel.detail.readSourcePerformance(categories)).find(
-        (r) => r.source === target!.row.source,
-      );
-      expect(shown?.subSources).toEqual(target!.row.subSources);
+      for (const sub of target!.row.subSources) {
+        await expect(funnel.hoverPanel.sourceItem(sub.source), sub.source).toBeVisible();
+        await expect(
+          funnel.hoverPanel.sourceCount(sub.source, sub.candidates),
+          `${sub.source}: ${sub.candidates}`,
+        ).toBeVisible();
+      }
+      // Exactly these individual sources, in order: none missing, none extra.
+      const listed = (await funnel.hoverPanel.read()).sources
+        .map((item) => item.source)
+        .filter((name) => !CATEGORY_LABELS.includes(name));
+      expect(listed).toEqual(target!.row.subSources.map((sub) => sub.source));
     },
   );
 
   test(
-    'S-86-10 an expanded source collapses again when its expand control is clicked again',
+    'S-86-10 in the hover preview, an expanded source collapses again when its control is clicked again',
     details({
       ac: ['WP23-86 AC 3.1'],
       title: 'An expanded source can be collapsed again',
-      what: 'Expands a source into its individual sources, clicks the control again, and checks the individual sources are hidden.',
+      what: 'Hovers a stage, expands a source into its individual sources in the hover preview, clicks the control again, and checks the individual sources are hidden.',
     }),
     async ({ recruitmentFunnelPage, recruitmentFunnelRepository }) => {
       const { funnel } = recruitmentFunnelPage;
@@ -367,11 +391,47 @@ test.describe('WP23-86 stage hover and pin', () => {
         recruitmentFunnelRepository,
         window,
       );
-      const target = FUNNEL_STAGES.flatMap((stage, index) =>
-        expectedSourcePerformance({ stages, index, applications, asOf: window.endDate })
-          .filter((row) => row.subSources.length >= 2)
-          .map((row) => ({ stage: stage.label, row })),
-      )[0];
+      const target = firstExpandableSource({ stages, applications, asOf: window.endDate });
+      test.skip(
+        !target,
+        'No source has two or more individual sources at any stage in the last 12 months.',
+      );
+
+      await funnel.hoverStage(target!.stage);
+      await expect(funnel.hoverPanel.heading).toHaveText(target!.stage);
+      const expand = funnel.hoverPanel.expandControl(target!.row.source);
+      await expectHoverExpandControl(funnel.hoverPanel, target!.row.source, target!.stage);
+      await expand.click();
+      await expect(expand).toHaveAttribute('aria-expanded', 'true');
+      for (const sub of target!.row.subSources) {
+        await expect(
+          funnel.hoverPanel.sourceItem(sub.source),
+          `${sub.source} expanded`,
+        ).toBeVisible();
+      }
+      await expand.click();
+      await expect(expand).toHaveAttribute('aria-expanded', 'false');
+      for (const sub of target!.row.subSources) {
+        await expect(funnel.hoverPanel.sourceItem(sub.source), sub.source).toBeHidden();
+      }
+    },
+  );
+
+  test(
+    'S-86-13 the pinned full detail lists every individual source, with no expand or collapse control',
+    details({
+      ac: ['WP23-295 AC 3'],
+      title: 'The full detail always lists every individual source',
+      what: 'Pins a stage whose source has several individual sources and checks its full detail lists every individual source under each category, with the database’s counts and shares, and offers no expand or collapse control (by design: only the hover preview expands, WP23-591).',
+    }),
+    async ({ recruitmentFunnelPage, recruitmentFunnelRepository }) => {
+      const { funnel } = recruitmentFunnelPage;
+      const window = resolveGlobalPreset('Last 12 months');
+      const { stages, applications } = await loadExpectedFunnel(
+        recruitmentFunnelRepository,
+        window,
+      );
+      const target = firstExpandableSource({ stages, applications, asOf: window.endDate });
       test.skip(
         !target,
         'No source has two or more individual sources at any stage in the last 12 months.',
@@ -379,34 +439,34 @@ test.describe('WP23-86 stage hover and pin', () => {
 
       await funnel.pinStage(target!.stage);
       await expect(funnel.detail.root).toHaveAccessibleName(`Full stage detail: ${target!.stage}`);
-      const expand = funnel.detail.expandControl(target!.row.source);
-      try {
-        await expect(expand).toBeVisible();
-      } catch (error) {
-        if ((await expand.count()) === 0)
-          markSuspectedDefect(SUSPECTED_DEFECTS.funnelNoSourceExpand);
-        throw error;
-      }
-      await expand.click();
-      await expect(expand).toHaveAttribute('aria-expanded', 'true');
-      await expand.click();
-      await expect(expand).toHaveAttribute('aria-expanded', 'false');
-      for (const sub of target!.row.subSources) {
-        await expect(funnel.detail.sourceRow(sub.source)).toBeHidden();
-      }
+      expect(subSourceRows(await funnel.detail.readSourcePerformance(CATEGORY_LABELS))).toEqual(
+        subSourceRows(
+          expectedSourcePerformance({
+            stages,
+            index: target!.index,
+            applications,
+            asOf: window.endDate,
+          }),
+        ),
+      );
+      await expect(funnel.detail.sourceTableExpandControls).toHaveCount(0);
     },
   );
 
   test(
-    'S-86-12 a stage with no candidates says "No data for this period" on hover and when pinned',
+    'S-86-12 a stage with no candidates says "Nobody reached this stage in these dates." on hover and when pinned',
     details({
       ac: ['WP23-86 AC 6'],
-      title: 'A stage nobody reached says there is no data for the period',
-      what: 'Finds a date preset where a recruitment stage has nobody, hovers and then clicks that stage, and checks its name, category and “No data for this period” are shown instead of figures.',
+      title: 'A stage nobody reached says so instead of showing figures',
+      what: 'Finds a date preset where a recruitment stage has nobody, hovers and then clicks that stage, and checks its name, category and “Nobody reached this stage in these dates.” are shown (wording accepted by the QA lead on 12 Nov in place of the AC’s “No data for this period”), and that the pinned summary shows the zero figures from the database.',
     }),
     async ({ recruitmentFunnelPage, widgetRequests, recruitmentFunnelRepository }) => {
       const { funnel } = recruitmentFunnelPage;
-      let found: { preset: (typeof GLOBAL_PRESETS)[number]; index: number } | null = null;
+      let found: {
+        preset: (typeof GLOBAL_PRESETS)[number];
+        index: number;
+        stages: Awaited<ReturnType<typeof loadExpectedFunnel>>['stages'];
+      } | null = null;
       for (const preset of GLOBAL_PRESETS) {
         const { stages } = await loadExpectedFunnel(
           recruitmentFunnelRepository,
@@ -414,7 +474,7 @@ test.describe('WP23-86 stage hover and pin', () => {
         );
         const index = stages.findIndex((s) => s.state === 'available' && s.total === 0);
         if (index >= 0 && stages.some((s) => s.state === 'available' && s.total > 0)) {
-          found = { preset, index };
+          found = { preset, index, stages };
           break;
         }
       }
@@ -441,16 +501,15 @@ test.describe('WP23-86 stage hover and pin', () => {
       );
       const pinnedNote = ((await funnel.detail.note.textContent()) ?? '').trim();
 
-      // AC 6 wording ("No data for this period", the app adds a full stop). Labelled only when
-      // every wrong note is the app's real-zero copy (QA-WP23-61-4), not for any other text.
-      const notes = [hover.note ?? '', pinnedNote];
-      const wrong = notes.filter((note) => !note.startsWith(FUNNEL_COPY.noDataForPeriod));
-      if (wrong.length > 0 && wrong.every((note) => note === FUNNEL_COPY.zeroDetail)) {
-        markSuspectedDefect(SUSPECTED_DEFECTS.funnelZeroStageCopy);
-      }
-      expect(notes, 'hover note, then pinned note').toEqual([
-        expect.stringMatching(new RegExp(`^${FUNNEL_COPY.noDataForPeriod}\\.?$`)),
-        expect.stringMatching(new RegExp(`^${FUNNEL_COPY.noDataForPeriod}\\.?$`)),
+      // AC 6's "No data for this period" was replaced by this wording (QA lead, 2026-11-12).
+      // The pinned summary shows the zero figures as they are (accepted with the wording):
+      // 0 candidates, and arrived / lost from the previous stage per the database.
+      expect(await funnel.detail.readSummary(), 'pinned summary figures').toEqual(
+        expectedStageSummary(found!.stages, found!.index),
+      );
+      expect([hover.note, pinnedNote], 'hover note, then pinned note').toEqual([
+        FUNNEL_COPY.zeroDetail,
+        FUNNEL_COPY.zeroDetail,
       ]);
     },
   );

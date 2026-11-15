@@ -67,7 +67,9 @@ export class RecruitmentFunnelRepository {
   /**
    * Every non-deleted application created inside `window` (internal ones included: the board
    * counts all applications, WP23-417), with the day each stage was reached, so expectations
-   * can place it at the furthest stage reached by any date (WP23-85 AC 5 / NOTE 2.2).
+   * can place it at the furthest stage reached by any date (WP23-85 AC 5 / NOTE 2.2), and
+   * whether its source is unclassified (WP23-520; a missing flag falls back to a blank,
+   * "UNKNOWN" or "(not set)" channel, AC silent: per app `getRecruitmentFunnel.ts`).
    */
   async getApplications({ startDate, endDate }: DateWindow): Promise<AtsApplicationRow[]> {
     const rows = await this.db.query<Record<string, unknown>>(
@@ -79,7 +81,11 @@ export class RecruitmentFunnelRepository {
               to_char(confirmed_observed_date, 'YYYY-MM-DD') AS confirmed_observed_date,
               to_char(reached_hired_date, 'YYYY-MM-DD') AS reached_hired_date,
               to_char(first_observed_date, 'YYYY-MM-DD') AS first_observed_date,
-              COALESCE(is_hired, false) AS is_hired
+              COALESCE(is_hired, false) AS is_hired,
+              COALESCE(is_source_unclassified,
+                       NULLIF(TRIM(source_channel), '') IS NULL
+                       OR UPPER(TRIM(source_channel)) IN ('UNKNOWN', '(NOT SET)'))
+                AS is_source_unclassified
          FROM ${ATS}
         WHERE application_created_date BETWEEN $1::date AND $2::date
           AND NOT is_deleted`,
@@ -97,6 +103,7 @@ export class RecruitmentFunnelRepository {
       reachedHiredDate: (row.reached_hired_date as string | null) ?? null,
       firstObservedDate: (row.first_observed_date as string | null) ?? null,
       isHired: row.is_hired === true,
+      isSourceUnclassified: row.is_source_unclassified === true,
     }));
   }
 

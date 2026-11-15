@@ -1,6 +1,5 @@
 import type { Locator } from '@playwright/test';
 import type {
-  ConversionChartReading,
   SourcePerformanceRow,
   StageSummaryReading,
 } from '../../../../types/wisersite/recruitment-funnel.types';
@@ -62,9 +61,12 @@ export class FullStageDetail {
       .filter({ has: this.root.page().getByRole('rowheader', { name, exact: true }) });
   }
 
-  /** The expand / collapse control on a source category's row (WP23-86 AC 3). */
-  expandControl(category: string): Locator {
-    return this.sourceRow(category).getByRole('button');
+  /**
+   * Anything in the source performance table that could expand or collapse a row: a button, or
+   * any element carrying `aria-expanded` (by design there is none, WP23-591).
+   */
+  get sourceTableExpandControls(): Locator {
+    return this.sourceTable.locator('button, [aria-expanded]');
   }
 
   /** The figure under a summary term ("Candidates at stage", "Lost at this stage", …). */
@@ -119,17 +121,5 @@ export class FullStageDetail {
       }
     }
     return rows;
-  }
-
-  /** The weekly chart, from its heading and its screen-reader caption ("Week starting …: x%."). */
-  async readConversionChart(): Promise<ConversionChartReading> {
-    const heading = (
-      (await this.conversionChart.getByRole('heading', { level: 3 }).textContent()) ?? ''
-    ).trim();
-    const caption = (await this.conversionChart.textContent()) ?? '';
-    const weeks = [...caption.matchAll(/Week starting (\d{4}-\d{2}-\d{2}): ([\d.]+%)\./g)].map(
-      (m) => ({ weekStart: m[1]!, percent: m[2]! }),
-    );
-    return { heading, weeks };
   }
 }

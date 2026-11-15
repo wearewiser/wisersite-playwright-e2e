@@ -23,9 +23,14 @@ Postgres warehouse. See `README.md` for setup and the folder layout.
   `KNOWN_DEFECT_REGISTER_ROWS` (`known-defects.constants.ts`); never edit the register. A
   suspected new defect fails red with `markSuspectedDefect()` and a row in
   `docs/suspected-defects.md`, and is reported.
-- When the user or PO accepts a defect's behaviour, stop testing it: remove the test (or the
-  assertion) and its label, and record it under "Known defects accepted" in
-  `docs/suspected-defects.md`. Never keep asserting the buggy value instead.
+- When the user or PO accepts a defect's behaviour, it is no longer a defect: drop its label and
+  record it under "Known defects accepted" in `docs/suspected-defects.md` (who accepted it,
+  when, and what the suite does now). Then:
+  - If the behaviour is part of a main user flow and important to test (e.g. the message a
+    stage shows when nobody reached it), change the test to expect the accepted behaviour,
+    with values from SQL where it shows figures, and cite the acceptance in the test.
+  - Otherwise, stop testing it: remove the test (or the assertion).
+  Never keep a defect label on accepted behaviour, and never assert a still-open defect's value.
 - No performance or timing tests ("shown within 1 s", load times): out of scope for this repo.
   List such ACs as not tested (out of scope) in plans and reviews.
 

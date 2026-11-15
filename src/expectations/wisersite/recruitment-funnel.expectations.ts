@@ -1,7 +1,6 @@
 import {
   ALL_SOURCE_GROUPS,
   CHARTED_SOURCES,
-  CONVERSION_CHART_WEEKS,
   FEED_DATA_NAME,
   FUNNEL_COPY,
   FUNNEL_STAGES,
@@ -30,7 +29,6 @@ import type {
 import type { DateWindow } from '../../types/wisersite/source-to-hire.types';
 import { formatLocaleCount } from '../../utils/format/locale-number';
 import { formatIntlDisplayDate } from '../../utils/wisersite/date-format';
-import { nthDayDate } from '../../utils/wisersite/date-window';
 
 /**
  * What the Recruitment Funnel (epic WP23-61) should show, from warehouse rows and the tickets'
@@ -359,10 +357,11 @@ function signed(value: number, format: (n: number) => string): string {
 const wholePercent = (value: number) => `${Math.round(value)}%`;
 
 /**
- * WP23-86 AC 1.4 and 1.6: each stage's flow, all whole numbers. % arrived = this ÷ previous
- * (D-4; "—" on Reach, AC 1.4); lost = previous − this; % drop = lost ÷ previous; cumulative drop
- * = drop from Reach to this stage (never below 0). Where the previous stage is a real zero, 0 → 0
- * is 0% and anything above it "—" (D-6, WP23-358 triage). Null for stages without data.
+ * WP23-86 AC 1.4 and 1.6: each stage's flow. % arrived = this ÷ previous, exact (AC 1.4 sets no
+ * rounding; D-4: it can pass 100%, PO WP23-357; none on Reach); lost = previous − this, % drop =
+ * lost ÷ previous and cumulative drop = drop from Reach to this stage (never below 0), whole
+ * numbers (AC 1.6). Where the previous stage is a real zero, 0 → 0 is 0% and anything above it
+ * "—" (D-6, WP23-358 triage). Null for stages without data.
  */
 export function expectedStageFlows(stages: ExpectedStage[]): (ExpectedStageFlow | null)[] {
   const states = columnStates(stages);
@@ -373,7 +372,7 @@ export function expectedStageFlows(stages: ExpectedStage[]): (ExpectedStageFlow 
       const dash = FUNNEL_COPY.noValue;
       return {
         stage: stage.label,
-        arrived: null,
+        arrivedPercent: null,
         fromPrevious: dash,
         drop: dash,
         cumulative: dash,
@@ -384,13 +383,7 @@ export function expectedStageFlows(stages: ExpectedStage[]): (ExpectedStageFlow 
     const prevOk = previous.state === 'available';
     const cur = stage.total;
     const prev = previous.total;
-    const arrived = !prevOk
-      ? dash
-      : prev > 0
-        ? wholePercent((cur / prev) * 100)
-        : cur === 0
-          ? '0%'
-          : dash;
+    const arrivedPercent = !prevOk ? null : prev > 0 ? (cur / prev) * 100 : cur === 0 ? 0 : null;
     const drop = !prevOk ? null : prev > 0 ? ((prev - cur) / prev) * 100 : cur === 0 ? 0 : null;
     const cumulative =
       first.state !== 'available'
@@ -402,25 +395,12 @@ export function expectedStageFlows(stages: ExpectedStage[]): (ExpectedStageFlow 
             : null;
     return {
       stage: stage.label,
-      arrived,
+      arrivedPercent,
       fromPrevious: prevOk ? signed(prev - cur, (n) => formatLocaleCount(Math.round(n))) : dash,
       drop: drop === null ? dash : signed(drop, (n) => wholePercent(n)),
       cumulative: cumulative === null ? dash : wholePercent(cumulative),
     };
   });
-}
-
-/**
- * WP23-86 AC 1.4 / WP23-295 AC 2.2 bound (D-4): the % of the previous stage's candidates who
- * reach this one can't exceed 100% where both stages count the same applicants (ATS → ATS).
- * True when the stage at `index` breaks the bound on `stages`.
- */
-export function arrivalExceedsWholeCohort(stages: ExpectedStage[], index: number): boolean {
-  const stage = stages[index];
-  const previous = stages[index - 1];
-  const ats = (s: ExpectedStage | undefined) =>
-    !!s && FUNNEL_STAGES.find((d) => d.key === s.key)!.feed === 'ats';
-  return !!stage && !!previous && ats(stage) && ats(previous) && stage.total > previous.total;
 }
 
 /**
@@ -492,20 +472,20 @@ export function atsSubSourceLabel(channel: string | null, sourceType: string | n
 }
 
 /**
- * WP23-86 AC 3 / WP23-295 AC 3 (share of the stage, PO option B on WP23-368): the individual
- * sources behind one source group at an ATS stage, largest first (then by name), the tail past
- * `MAX_SUB_SOURCES` folded into "Other sources" (AC silent on the cap: per app
- * `getRecruitmentFunnel.ts`). Share has one decimal (AC silent: per app `StageSourcePerformance.tsx`).
+ * WP23-86 AC 3 / WP23-295 AC 3: the individual sources behind one source group at an ATS stage
+ * with their counts, largest first (then by name), the tail past `MAX_SUB_SOURCES` folded into
+ * "Other sources" (AC silent on the cap: per app `getRecruitmentFunnel.ts`). Applications whose
+ * source the ATS didn't classify aren't listed (WP23-520).
  */
-export function expectedSubSources(
+function subSourceCounts(
   applications: AtsApplicationRow[],
   asOf: string,
   stageOrder: number,
   group: FunnelSourceGroup,
-  shareTotal: number,
-): { source: string; candidates: string; share: string }[] {
+): { source: string; count: number }[] {
   const byLabel = new Map<string, number>();
   for (const row of applications) {
+    if (row.isSourceUnclassified) continue;
     if (atsStageAsOf(row, asOf) !== stageOrder || atsGroupOf(row) !== group) continue;
     const label = atsSubSourceLabel(row.sourceChannel, row.sourceType);
     byLabel.set(label, (byLabel.get(label) ?? 0) + 1);
@@ -515,11 +495,29 @@ export function expectedSubSources(
     .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source));
   const top = ranked.slice(0, MAX_SUB_SOURCES);
   const rest = ranked.slice(MAX_SUB_SOURCES).reduce((n, r) => n + r.count, 0);
-  const rows = rest > 0 ? [...top, { source: OTHER_SUB_SOURCES_LABEL, count: rest }] : top;
-  return rows.map(({ source, count }) => ({
+  return rest > 0 ? [...top, { source: OTHER_SUB_SOURCES_LABEL, count: rest }] : top;
+}
+
+/**
+ * WP23-86 AC 3 / WP23-295 AC 3: the sub-source rows of one source group at an ATS stage. Share
+ * is of the LISTED sources, so the sub-rows of every listed group add up to 100%: `listedTotal`
+ * is the stage's applications in the groups shown, less those flagged
+ * `is_source_unclassified` (PO decision WP23-520 Q4, 4 Nov, confirmed by the developer 5 Nov;
+ * replaces WP23-368 option B, share of the stage. WP23-601, which asked for the stage base, was
+ * closed as expected behaviour). E.g. Last 12 months, Application Submitted: Career Site 403 /
+ * 434 = 92.9%. One decimal (AC silent: per app `StageSourcePerformance.tsx`).
+ */
+export function expectedSubSources(
+  applications: AtsApplicationRow[],
+  asOf: string,
+  stageOrder: number,
+  group: FunnelSourceGroup,
+  listedTotal: number,
+): { source: string; candidates: string; share: string }[] {
+  return subSourceCounts(applications, asOf, stageOrder, group).map(({ source, count }) => ({
     source,
     candidates: formatLocaleCount(count),
-    share: `${(shareTotal > 0 ? (count / shareTotal) * 100 : 0).toFixed(1)}%`,
+    share: `${(listedTotal > 0 ? (count / listedTotal) * 100 : 0).toFixed(1)}%`,
   }));
 }
 
@@ -530,7 +528,8 @@ export function expectedSubSources(
  * stage ÷ reaching this one (WP23-357 PO formula), "—" where the two stages don't count the same
  * applicants (anything but ATS → ATS, and the last stage) or a side has no data (WP23-357
  * "or – when the two stages can't be compared"). Whole numbers (AC silent: per app).
- * `subSources` is filled for ATS stages from `applications`; empty elsewhere.
+ * `subSources` is filled for ATS stages from `applications` (share of the listed sources,
+ * WP23-520 Q4: see `expectedSubSources`); empty elsewhere.
  */
 export function expectedSourcePerformance({
   stages,
@@ -562,6 +561,15 @@ export function expectedSourcePerformance({
     atsKeys.includes(stage.key) &&
     atsKeys.includes(next.key);
   const dash = FUNNEL_COPY.noValue;
+  const atsOrder = definition.atsOrder;
+  const listedTotal =
+    drawsData && atsOrder !== null
+      ? visible.reduce(
+          (n, { group: g }) =>
+            n + subSourceCounts(applications, asOf, atsOrder, g).reduce((m, r) => m + r.count, 0),
+          0,
+        )
+      : 0;
   return visible.map(({ group: g, label }) => {
     const count = stage.counts[g];
     const reached = comparable ? reachedFrom(shown, index, g) : 0;
@@ -573,71 +581,36 @@ export function expectedSourcePerformance({
         ? dash
         : wholePercent(reached > 0 ? (reachedFrom(shown, index + 1, g) / reached) * 100 : 0),
       subSources:
-        drawsData && definition.atsOrder !== null && count > 0
-          ? expectedSubSources(applications, asOf, definition.atsOrder, g, total)
+        drawsData && atsOrder !== null && count > 0
+          ? expectedSubSources(applications, asOf, atsOrder, g, listedTotal)
           : [],
     };
   });
 }
 
-/** Monday on or before `isoDate` (weeks start Monday; AC silent: per app `conversionWeeks`). */
-function mondayOf(isoDate: string): string {
-  const day = new Date(`${isoDate}T00:00:00Z`).getUTCDay();
-  return nthDayDate(isoDate, -((day + 6) % 7));
-}
-
 /**
- * WP23-295 AC 6.1: the "eight previous weeks" of the conversion chart: the Mondays of the
- * `CONVERSION_CHART_WEEKS` weeks ending with the week `endDate` falls in, and the window they
- * cover (through `endDate`). AC silent on week boundaries: per app `getRecruitmentFunnel.ts`.
+ * WP23-86 AC 3: the first stage and source category with two or more individual sources, none
+ * named like a category (so a list can be read by name), or undefined when no stage has one.
  */
-export function conversionChartWeeks(endDate: string): {
-  weekStarts: string[];
-  window: DateWindow;
-} {
-  const last = mondayOf(endDate);
-  const weekStarts = Array.from({ length: CONVERSION_CHART_WEEKS }, (_, i) =>
-    nthDayDate(last, (i - CONVERSION_CHART_WEEKS + 1) * 7),
-  );
-  return { weekStarts, window: { startDate: weekStarts[0]!, endDate } };
-}
-
-/**
- * WP23-295 AC 6.1: per week, the % of applications that reached the ATS stage `fromOrder` and went
- * on to `fromOrder + 1`, counting the week's applications (created that week, known by its end)
- * at the stage they had reached by the week's end (NOTE 2.2; AC silent on the cohort: per app
- * `getRecruitmentFunnel.ts` `atsWeeklySql`). Weeks before the ATS feed's first day are left out.
- * Percent with one decimal, ".0" dropped (AC silent: per app `StageConversionChart.tsx`).
- */
-export function expectedWeeklyConversion({
+export function firstExpandableSource({
+  stages,
   applications,
-  fromOrder,
-  endDate,
-  atsFirstDay,
+  asOf,
 }: {
+  stages: ExpectedStage[];
   applications: AtsApplicationRow[];
-  fromOrder: number;
-  endDate: string;
-  atsFirstDay: string | null;
-}): { weekStart: string; percent: string }[] {
-  return conversionChartWeeks(endDate)
-    .weekStarts.filter((ws) => !atsFirstDay || nthDayDate(ws, 6) >= atsFirstDay)
-    .map((weekStart) => {
-      const sixth = nthDayDate(weekStart, 6);
-      const weekEnd = sixth < endDate ? sixth : endDate;
-      let atStage = 0;
-      let atNext = 0;
-      for (const row of applications) {
-        if (row.createdDate < weekStart || row.createdDate > weekEnd) continue;
-        if (!row.firstObservedDate || row.firstObservedDate > weekEnd) continue;
-        const stage = atsStageAsOf(row, weekEnd);
-        if (stage === null) continue;
-        if (stage >= fromOrder) atStage += 1;
-        if (stage >= fromOrder + 1) atNext += 1;
-      }
-      const percent = atStage > 0 ? (atNext / atStage) * 100 : 0;
-      return { weekStart, percent: `${percent.toFixed(1).replace(/\.0$/, '')}%` };
-    });
+  asOf: string;
+}): { stage: string; index: number; row: SourcePerformanceRow } | undefined {
+  const categories: readonly string[] = CHARTED_SOURCES.map((s) => s.label);
+  return FUNNEL_STAGES.flatMap((stage, index) =>
+    expectedSourcePerformance({ stages, index, applications, asOf })
+      .filter(
+        (row) =>
+          row.subSources.length >= 2 &&
+          row.subSources.every((sub) => !categories.includes(sub.source)),
+      )
+      .map((row) => ({ stage: stage.label, index, row })),
+  )[0];
 }
 
 /** WP23-295 AC 3.1–3.3: the category rows of a source performance table, without sub-sources. */
@@ -706,7 +679,7 @@ const firstNumber = (text: string | null | undefined): number | null => {
 /**
  * WP23-86 AC 1.4 / 1.6, WP23-295 AC 2.2 / 2.3: every way `readings` differ from `expected`
  * (rows matched by index, compared field by field): Career Site Views showing "—" where the AC
- * wants a value (QA-WP23-61-3), a one-decimal percentage that rounds to the AC's whole number
+ * wants a value (WP23-605), a one-decimal percentage that rounds to the AC's whole number
  * (WP23-86 D-5), or anything else. A test labels a defect only when nothing is "other".
  */
 export function flowMismatches(
@@ -737,4 +710,34 @@ export function flowMismatches(
     }
   });
   return found;
+}
+
+/** WP23-86 AC 1.4: how far a hover's "% arrived" may sit from the exact SQL ratio (display rounding). */
+export const ARRIVAL_TOLERANCE_PERCENT = 0.5;
+
+/**
+ * WP23-86 AC 1.4: why a hover's "% arrived" line differs from the AC value, or null when it
+ * matches. With a % expected the line must read "<n>% arrived from <previous>" with n within
+ * ±0.5 of `percent` (AC 1.4 sets no rounding: whole or one decimal both pass); with none
+ * expected (null) it must be "—". Career Site Views showing "—" where a % is due is
+ * WP23-605; anything else is "other".
+ */
+export function arrivalMismatch(
+  stage: string,
+  line: string | null,
+  percent: number | null,
+  previous: string,
+): FlowMismatch | null {
+  if (percent === null) return line === FUNNEL_COPY.noValue ? null : 'other';
+  const match = /^([\d,]+(?:\.\d+)?)% arrived from (.+)$/.exec(line ?? '');
+  if (
+    match &&
+    match[2] === previous &&
+    Math.abs(Number(match[1]!.replace(/,/g, '')) - percent) <= ARRIVAL_TOLERANCE_PERCENT
+  ) {
+    return null;
+  }
+  return stage === 'Career Site Views' && line === FUNNEL_COPY.noValue
+    ? 'careerSiteViewsDash'
+    : 'other';
 }

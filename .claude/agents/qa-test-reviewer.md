@@ -77,7 +77,8 @@ the scripts, the `review.json` format and the report builder. Then:
 6. **Report** — write `review.json`, run `build-report.cjs` into `reports/qa-review/`, then
    `qa-business-report` into `reports/business/` (one per epic, `--only <spec folder>/` when
    the run covers the whole suite), and check both rendered. Performance/timing ACs and
-   defects accepted in `docs/suspected-defects.md` go under `notTested`, not findings.
+   accepted defects that are no longer tested go under `notTested`, not findings; a test that
+   asserts accepted main-flow behaviour (no label, acceptance cited) is correct, not a finding.
 
 ## Final message (the parent session relays it)
 

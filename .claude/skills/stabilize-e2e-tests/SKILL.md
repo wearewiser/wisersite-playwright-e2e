@@ -39,8 +39,10 @@ node .claude/skills/stabilize-e2e-tests/scripts/check-defect-labels.cjs --strict
 them to `KNOWN_DEFECTS`, citing the Jira key; add the key to `KNOWN_DEFECT_REGISTER_ROWS` if the
 register row has another ID), and unused constants. It resolves Jira keys through
 `KNOWN_DEFECT_REGISTER_ROWS`; it never needs, and you never make, an edit to KNOWN-DEFECTS.md.
-A defect the user or PO **accepts** is no longer tested: remove the test or assertion and its
-label, and add it to "Known defects accepted" in `docs/suspected-defects.md`.
+A defect the user or PO **accepts** loses its label and goes under "Known defects accepted" in
+`docs/suspected-defects.md`. If the behaviour is part of a main user flow and important to test,
+change the test to expect it (values from SQL, acceptance cited); otherwise remove the test or
+assertion.
 
 ## 2. Run
 

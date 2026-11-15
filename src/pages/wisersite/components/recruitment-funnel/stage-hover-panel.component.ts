@@ -19,6 +19,36 @@ export class StageHoverPanel {
   }
 
   /**
+   * A source in the breakdown list, by its exact name: a category, or one of its individual
+   * sources once expanded (WP23-86 AC 3). The innermost match, in case sources nest in their
+   * category's item.
+   */
+  sourceItem(name: string): Locator {
+    return this.root
+      .getByRole('listitem')
+      .filter({ has: this.root.page().getByText(name, { exact: true }) })
+      .last();
+  }
+
+  /** The expand / collapse control on a source category in the breakdown (WP23-86 AC 3, 3.1). */
+  expandControl(category: string): Locator {
+    return this.sourceItem(category).getByRole('button');
+  }
+
+  /**
+   * Anything in the panel that could expand or collapse: a button, or any element carrying
+   * `aria-expanded`. None at all means the panel has no expand control in any form.
+   */
+  get expandControls(): Locator {
+    return this.root.locator('button, [aria-expanded]');
+  }
+
+  /** The count shown in a source's item, matched as a whole figure ("3" doesn't match "403"). */
+  sourceCount(name: string, count: string): Locator {
+    return this.sourceItem(name).getByText(count, { exact: true });
+  }
+
+  /**
    * Reads the panel in one in-page pass. Paragraphs run: category, then either "Candidates at
    * stage" / figure / arrival line (stage with data) or the note shown instead of metrics. The
    * stage-flow boxes have no roles, so they're parsed from the panel's text.

@@ -7,7 +7,7 @@ import type { DateWindow } from '../../types/wisersite/source-to-hire.types';
 /**
  * Loads the warehouse rows behind the funnel for one window and turns them into the expected
  * stages (WP23-85 AC 1 / 5). `asOf` is the day ATS stages are counted to: the window's end by
- * default (NOTE 2.2). The raw applications come back too, for sub-sources and the weekly chart.
+ * default (NOTE 2.2). The raw applications come back too, for sub-sources.
  */
 export async function loadExpectedFunnel(
   repository: RecruitmentFunnelRepository,

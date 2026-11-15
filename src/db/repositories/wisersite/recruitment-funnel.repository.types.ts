@@ -28,6 +28,11 @@ export type AtsApplicationRow = {
   reachedHiredDate: string | null;
   firstObservedDate: string | null;
   isHired: boolean;
+  /**
+   * The ATS couldn't classify the application's source (WP23-520): counted in the stage totals,
+   * not listed as a sub-source.
+   */
+  isSourceUnclassified: boolean;
 };
 
 /** A feed's span and last load, as the warehouse holds it. */

@@ -1,8 +1,5 @@
 import { expect, test } from '../../../src/fixtures/wisersite.fixtures';
-import {
-  KNOWN_DEFECTS,
-  SUSPECTED_DEFECTS,
-} from '../../../src/constants/wisersite/known-defects.constants';
+import { KNOWN_DEFECTS } from '../../../src/constants/wisersite/known-defects.constants';
 import {
   CHARTED_SOURCES,
   FUNNEL_STAGES,
@@ -10,13 +7,10 @@ import {
   FUNNEL_WIDGET_TIMEOUT_MS,
 } from '../../../src/constants/wisersite/recruitment-funnel.constants';
 import {
-  arrivalExceedsWholeCohort,
   categoryRows,
-  conversionChartWeeks,
   expectedFunnelTable,
   expectedSourcePerformance,
   expectedStageSummary,
-  expectedWeeklyConversion,
   firstStageLosingOverHalf,
   flowMismatches,
   subSourceRows,
@@ -26,7 +20,6 @@ import {
   details,
   markKnownDefect,
   markLimitedByData,
-  markSuspectedDefect,
 } from '../../../src/utils/playwright/test-annotations';
 import { resolveGlobalPreset } from '../../../src/utils/wisersite/date-window';
 import { loadExpectedFunnel } from '../../../src/utils/wisersite/funnel-oracle';
@@ -38,15 +31,16 @@ import { loadExpectedFunnel } from '../../../src/utils/wisersite/funnel-oracle';
  * AC 1: a pinned stage shows its full detail, arrows step to the previous / next stage, and it can
  * be closed. AC 2: candidates at stage, % arrived from the previous stage ("–" for the first), %
  * lost (neutral styling). AC 3: per source, by category: candidates, share of the stage, % to the
- * next stage. AC 4 / 5: device split and leave reasons only when data exists (none in the
- * warehouse yet, so only the hidden path, 4.2 / 5.2). AC 6: an 8-week "conversion to next stage"
- * chart, absent on the last stage. AC 7 (timing) isn't tested.
+ * next stage; the individual sources under each share the listed sources (WP23-520 Q4). AC 4 / 5:
+ * device split and leave reasons only when data exists (none in the warehouse yet, so only the
+ * hidden path, 4.2 / 5.2). AC 6.2: no conversion chart on the last stage. AC 6.1 (the 8-week
+ * chart's values, S-295-07) was removed on 2026-11-12 (QA lead decision). AC 7 (timing) isn't
+ * tested.
  */
 
 const FUNNEL = FUNNEL_WIDGET_KEYS.funnel;
 const WINDOW = () => resolveGlobalPreset('Last 12 months');
 const CATEGORY_LABELS = CHARTED_SOURCES.map((s) => s.label);
-const ATS_LABELS = FUNNEL_STAGES.filter((s) => s.feed === 'ats').map((s) => s.label);
 
 test.describe('WP23-295 full stage detail', () => {
   // Every test starts on the last 12 months with the funnel showing the warehouse's figures.
@@ -104,7 +98,7 @@ test.describe('WP23-295 full stage detail', () => {
         'WP23-295 AC 2.3',
       ],
       title: 'The full detail shows the stage’s summary figures',
-      what: 'On the last 12 months, steps through every stage’s full detail and compares candidates at stage, % arrived from the previous stage (none for the first) and % lost with the database; arrivals between recruitment stages can’t exceed 100%.',
+      what: 'On the last 12 months, steps through every stage’s full detail and compares candidates at stage, % arrived from the previous stage (none for the first) and % lost with the database. Arrivals can be over 100% (PO, WP23-357).',
     }),
     async ({ recruitmentFunnelPage, recruitmentFunnelRepository }) => {
       const { funnel } = recruitmentFunnelPage;
@@ -124,21 +118,10 @@ test.describe('WP23-295 full stage detail', () => {
         readings.map((r, i) => ({ stage: FUNNEL_STAGES[i]!.label, ...r })),
         expected.map((e, i) => ({ stage: FUNNEL_STAGES[i]!.label, ...e })),
       );
-      const explained = !mismatches.has('other');
-      if (explained && mismatches.has('careerSiteViewsDash')) {
-        markSuspectedDefect(SUSPECTED_DEFECTS.funnelCareerSiteViewsFlowDashed);
+      if (!mismatches.has('other') && mismatches.has('careerSiteViewsDash')) {
+        markKnownDefect(KNOWN_DEFECTS.funnelCareerSiteViewsFlowDashed);
       }
-      expect.soft(readings).toEqual(expected);
-
-      for (const [index, stage] of FUNNEL_STAGES.entries()) {
-        if (index === 0 || !ATS_LABELS.includes(stage.label)) continue;
-        if (!ATS_LABELS.includes(FUNNEL_STAGES[index - 1]!.label)) continue;
-        const shown = Number.parseFloat(readings[index]!.arrived);
-        if (explained && shown > 100 && arrivalExceedsWholeCohort(stages, index)) {
-          markKnownDefect(KNOWN_DEFECTS.funnelArrivalOver100);
-        }
-        expect.soft(shown, `${stage.label}: arrived from previous`).toBeLessThanOrEqual(100);
-      }
+      expect(readings).toEqual(expected);
     },
   );
 
@@ -167,7 +150,7 @@ test.describe('WP23-295 full stage detail', () => {
       const neutral = await funnel.detail.readSummaryColour('Candidates at stage');
       const lost = await funnel.detail.readSummaryColour('Lost at this stage');
       if (lost !== neutral && (await funnel.detail.summaryShowsWarningTone('Lost at this stage'))) {
-        markSuspectedDefect(SUSPECTED_DEFECTS.funnelLostNotNeutral);
+        markKnownDefect(KNOWN_DEFECTS.funnelLostNotNeutral);
       }
       expect(lost).toBe(neutral);
     },
@@ -212,7 +195,7 @@ test.describe('WP23-295 full stage detail', () => {
     details({
       ac: ['WP23-295 AC 3'],
       title: 'The full detail breaks each stage down by source',
-      what: 'On the last 12 months, opens each recruitment stage (Application Submitted to Hired) and compares the individual sources listed under each source category, with their counts and shares, with the database.',
+      what: 'On the last 12 months, opens each recruitment stage (Application Submitted to Hired) and compares the individual sources listed under each source category, with their counts and their share of all listed sources (so they add up to 100%, PO decision on WP23-520), with the database.',
       variant: 'Individual sources',
     }),
     async ({ recruitmentFunnelPage, recruitmentFunnelRepository }) => {
@@ -264,43 +247,6 @@ test.describe('WP23-295 full stage detail', () => {
         await expect(funnel.detail.leaveReasons).toHaveCount(0);
         if (index < FUNNEL_STAGES.length - 1) await funnel.detail.nextButton.click();
       }
-    },
-  );
-
-  test(
-    'S-295-07 the conversion chart shows the % moving on to the next stage for each of the last eight weeks',
-    details({
-      ac: ['WP23-295 AC 6', 'WP23-295 AC 6.1'],
-      title: 'The full detail charts weekly conversion to the next stage',
-      what: 'Opens Passed Screening on the last 12 months and compares the “Conversion to Interviewed” chart’s eight weeks with the database.',
-    }),
-    async ({ recruitmentFunnelPage, widgetRequests, recruitmentFunnelRepository }) => {
-      const { funnel } = recruitmentFunnelPage;
-      const window = WINDOW();
-      const from = FUNNEL_STAGES.findIndex((s) => s.key === 'passedScreening');
-      const stage = FUNNEL_STAGES[from]!;
-      const next = FUNNEL_STAGES[from + 1]!;
-      const weeks = conversionChartWeeks(window.endDate);
-      const ats = (await recruitmentFunnelRepository.getFeedSpans()).find((s) => s.feed === 'ats');
-      const expected = {
-        heading: `Conversion to ${next.label}`,
-        weeks: expectedWeeklyConversion({
-          applications: await recruitmentFunnelRepository.getApplications(weeks.window),
-          fromOrder: stage.atsOrder!,
-          endDate: window.endDate,
-          atsFirstDay: ats?.firstDay ?? null,
-        }),
-      };
-      console.log('Weekly conversion %s → %s: %o', stage.label, next.label, expected.weeks);
-
-      await funnel.pinStage(stage.label);
-      await expect(funnel.detail.root).toHaveAccessibleName(`Full stage detail: ${stage.label}`);
-      await expect
-        .poll(() => widgetRequests.last(FUNNEL))
-        .toMatchObject({ ...window, weekly: '1' });
-      await expect
-        .poll(() => funnel.detail.readConversionChart(), { timeout: FUNNEL_WIDGET_TIMEOUT_MS })
-        .toEqual(expected);
     },
   );
 
