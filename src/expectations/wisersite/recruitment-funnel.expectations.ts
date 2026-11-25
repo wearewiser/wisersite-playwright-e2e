@@ -17,7 +17,7 @@ import type {
 import type {
   ExpectedStage,
   ExpectedStageFlow,
-  ExpectedStageHover,
+  ExpectedStagePanel,
   FeedState,
   FunnelFeed,
   FunnelSourceGroup,
@@ -313,7 +313,7 @@ export function expectedBandLabels(
 }
 
 /**
- * Hover-panel percentages: whole from 10% up, one decimal below. AC silent on source-share
+ * Summary-panel percentages: whole from 10% up, one decimal below. AC silent on source-share
  * precision (WP23-86 AC 1.5): per app `stageFlowFormat.tsx` `formatStagePercent`.
  */
 function sourceSharePercent(value: number): string {
@@ -321,14 +321,14 @@ function sourceSharePercent(value: number): string {
 }
 
 /**
- * WP23-86 AC 1.3 / 1.5 (and WP23-307 AC 2.1 when filtered): the hover summary of each stage with
+ * WP23-86 AC 1.3 / 1.5 (and WP23-307 AC 2.1 when filtered): the summary panel of each stage with
  * data: candidates at stage, then each visible source's count and share of the stage (of the
  * filtered source's own total when a filter is on).
  */
-export function expectedStageHovers(
+export function expectedStagePanels(
   stages: ExpectedStage[],
   group: Exclude<FunnelSourceGroup, 'other'> | null = null,
-): (ExpectedStageHover | null)[] {
+): (ExpectedStagePanel | null)[] {
   const shown = filterStages(stages, group);
   const states = columnStates(shown);
   const visible = group ? CHARTED_SOURCES.filter((s) => s.group === group) : CHARTED_SOURCES;
@@ -712,11 +712,11 @@ export function flowMismatches(
   return found;
 }
 
-/** WP23-86 AC 1.4: how far a hover's "% arrived" may sit from the exact SQL ratio (display rounding). */
+/** WP23-86 AC 1.4: how far the summary's "% arrived" may sit from the exact SQL ratio (display rounding). */
 export const ARRIVAL_TOLERANCE_PERCENT = 0.5;
 
 /**
- * WP23-86 AC 1.4: why a hover's "% arrived" line differs from the AC value, or null when it
+ * WP23-86 AC 1.4: why the summary's "% arrived" line differs from the AC value, or null when it
  * matches. With a % expected the line must read "<n>% arrived from <previous>" with n within
  * ±0.5 of `percent` (AC 1.4 sets no rounding: whole or one decimal both pass); with none
  * expected (null) it must be "—". Career Site Views showing "—" where a % is due is

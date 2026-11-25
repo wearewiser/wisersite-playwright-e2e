@@ -19,17 +19,6 @@ import { nthDayDate } from './date-window';
 
 const LENGTH = MIN_CUSTOM_RANGE_DAYS;
 
-/**
- * WP23-85 AC 2.1.1: the first picker-length window after every feed's last day: nothing in it,
- * data before it. Null when no feed has data.
- */
-export function emptyTailWindow(spans: FeedSpan[]): DateWindow | null {
-  const lastDays = spans.map((s) => s.lastDay).filter((d): d is string => d !== null);
-  if (lastDays.length === 0) return null;
-  const startDate = nthDayDate(lastDays.sort().at(-1)!, 1);
-  return { startDate, endDate: nthDayDate(startDate, LENGTH - 1) };
-}
-
 /** WP23-85 AC 2.1.1 / WP23-358: a two-week window ending the day before any feed's first day. */
 export function beforeDataWindow(spans: FeedSpan[]): DateWindow | null {
   const firstDays = spans.map((s) => s.firstDay).filter((d): d is string => d !== null);

@@ -11,7 +11,7 @@ import {
   expectedBandLabels,
   expectedFunnelTable,
   expectedSourcePerformance,
-  expectedStageHovers,
+  expectedStagePanels,
   stageButtonValues,
 } from '../../../src/expectations/wisersite/recruitment-funnel.expectations';
 import {
@@ -107,11 +107,11 @@ test.describe('WP23-307 filter by source', () => {
   );
 
   test(
-    'S-307-03 with a filter on, hovering and pinning a stage show that source only',
+    "S-307-03 with a filter on, a stage's summary and full detail show that source only",
     details({
       ac: ['WP23-307 AC 2', 'WP23-307 AC 2.1'],
       title: 'With a filter on, stage details show only that source',
-      what: 'Clicks Organic, then hovers and clicks Passed Screening, and checks the summary and the full detail list Organic only, with its figures from the database.',
+      what: 'Clicks Organic, then clicks Passed Screening, and checks its summary and then its full detail list Organic only, with its figures from the database.',
     }),
     async ({ recruitmentFunnelPage, recruitmentFunnelRepository }) => {
       const { funnel } = recruitmentFunnelPage;
@@ -127,18 +127,18 @@ test.describe('WP23-307 filter by source', () => {
         .poll(() => funnel.readTable(), { timeout: FUNNEL_WIDGET_TIMEOUT_MS })
         .toEqual(expectedFunnelTable(stages, ORGANIC.group));
 
-      const hover = expectedStageHovers(stages, ORGANIC.group)[index];
-      test.skip(!hover, `No ${ORGANIC.label} candidates at ${stage.label} in the last 12 months.`);
-      await funnel.hoverStage(stage.label);
-      await expect(funnel.hoverPanel.heading).toHaveText(stage.label);
-      const reading = await funnel.hoverPanel.read();
+      const panel = expectedStagePanels(stages, ORGANIC.group)[index];
+      test.skip(!panel, `No ${ORGANIC.label} candidates at ${stage.label} in the last 12 months.`);
+      await funnel.pinStage(stage.label);
+      await expect(funnel.summary.heading).toHaveText(stage.label);
+      const reading = await funnel.summary.read();
       expect({
         stage: reading.stage,
         candidates: reading.candidates,
         sources: reading.sources,
-      }).toEqual(hover);
+      }).toEqual(panel);
 
-      await funnel.pinStage(stage.label);
+      await funnel.summary.fullDetailButton.click();
       await expect(funnel.detail.root).toHaveAccessibleName(`Full stage detail: ${stage.label}`);
       await expect
         .poll(() =>
@@ -161,7 +161,7 @@ test.describe('WP23-307 filter by source', () => {
     details({
       ac: ['WP23-307 AC 2.2'],
       title: 'Filtering while a stage is pinned narrows its detail to that source',
-      what: 'Clicks Passed Screening to pin it, then clicks Organic in the key, and checks the full detail stays open and lists Organic only.',
+      what: 'Clicks Passed Screening and opens its full detail, then clicks Organic in the key, and checks the full detail stays open and lists Organic only.',
     }),
     async ({ recruitmentFunnelPage, recruitmentFunnelRepository }) => {
       const { funnel } = recruitmentFunnelPage;
@@ -172,7 +172,7 @@ test.describe('WP23-307 filter by source', () => {
       );
       const index = stages.findIndex((s) => s.key === 'passedScreening');
       const label = stages[index]!.label;
-      await funnel.pinStage(label);
+      await funnel.openFullDetail(label);
       await expect(funnel.detail.root).toHaveAccessibleName(`Full stage detail: ${label}`);
 
       await funnel.clickSource(ORGANIC.label);

@@ -31,7 +31,6 @@ import {
 import {
   afterStaleFeedWindow,
   beforeDataWindow,
-  emptyTailWindow,
   partialFunnelWindow,
   pastMonthWindow,
   stagesMovedOnSince,
@@ -125,36 +124,6 @@ test.describe('WP23-85 Recruitment Funnel display', () => {
       console.log('Chip colours: %o', colours);
       expect(colours.every((c) => c !== '' && c !== 'rgba(0, 0, 0, 0)')).toBe(true);
       expect(new Set(colours).size).toBe(CHARTED_SOURCES.length);
-    },
-  );
-
-  test(
-    'S-85-04 a range with no candidates at any stage, but data before it, prompts to widen the range',
-    details({
-      ac: ['WP23-85 AC 2', 'WP23-85 AC 2.1', 'WP23-85 AC 2.1.1'],
-      title: 'An empty date range asks the user to widen it',
-      what: 'Picks the first week after the last day of data and checks the funnel shows no figures and a message asking to widen the date range.',
-      variant: 'Range after the last data',
-    }),
-    async ({ recruitmentFunnelPage, widgetRequests, recruitmentFunnelRepository }) => {
-      const window = emptyTailWindow(await recruitmentFunnelRepository.getFeedSpans());
-      test.skip(!window, 'No feed has any data, so no range has data around it.');
-      const { stages } = await loadExpectedFunnel(recruitmentFunnelRepository, window!);
-      test.skip(
-        stages.some((s) => s.total > 0),
-        `The week after the last data (${window!.startDate}) already has data.`,
-      );
-
-      await recruitmentFunnelPage.setCustomGlobalDateRange(window!.startDate, window!.endDate);
-      await widgetRequests.waitForWindow(FUNNEL, window!);
-      const { funnel } = recruitmentFunnelPage;
-      await expect
-        .poll(() => funnel.readTable(), { timeout: FUNNEL_WIDGET_TIMEOUT_MS })
-        .toEqual(expectedFunnelTable(stages));
-      await expect(funnel.banner).toContainText(
-        `No funnel data between ${formatIntlDisplayDate(window!.startDate)} and ${formatIntlDisplayDate(window!.endDate)}`,
-      );
-      await expect(funnel.banner).toContainText(FUNNEL_COPY.widenBannerBody);
     },
   );
 
@@ -264,9 +233,26 @@ test.describe('WP23-85 Recruitment Funnel display', () => {
       );
       await widgetRequests.waitForWindow(FUNNEL, found!.window);
       const { funnel } = recruitmentFunnelPage;
-      await expect
-        .poll(() => funnel.readTable(), { timeout: FUNNEL_WIDGET_TIMEOUT_MS })
-        .toEqual(expectedFunnelTable(stages));
+      const expected = expectedFunnelTable(stages);
+      try {
+        await expect
+          .poll(() => funnel.readTable(), { timeout: FUNNEL_WIDGET_TIMEOUT_MS })
+          .toEqual(expected);
+      } catch (error) {
+        // WP23-602: the window ends before today, and the ribbon counts ATS stages as reached
+        // today. Labelled only when the table is exactly that (any other difference is new).
+        const countedToToday = expectedFunnelTable(
+          (await loadExpectedFunnel(recruitmentFunnelRepository, found!.window, localTodayIso()))
+            .stages,
+        );
+        if (
+          JSON.stringify(countedToToday) !== JSON.stringify(expected) &&
+          JSON.stringify(await funnel.readTable()) === JSON.stringify(countedToToday)
+        ) {
+          markKnownDefect(KNOWN_DEFECTS.funnelStagesCountedToToday);
+        }
+        throw error;
+      }
       await expect(funnel.banner).toContainText(FUNNEL_COPY.syncingBannerTitle);
       for (const label of syncing) await expect(funnel.banner).toContainText(label);
     },

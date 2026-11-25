@@ -28,7 +28,7 @@ import { loadExpectedFunnel } from '../../../src/utils/wisersite/funnel-oracle';
  * WP23-295 — Recruitment funnel widget: view full stage detail (test plan
  * docs/test-plans/WP23-61.md, S-295-*).
  *
- * AC 1: a pinned stage shows its full detail, arrows step to the previous / next stage, and it can
+ * AC 1: a pinned stage's summary opens its full detail ("Full stage detail", WP23-591 design), arrows step to the previous / next stage, and it can
  * be closed. AC 2: candidates at stage, % arrived from the previous stage ("–" for the first), %
  * lost (neutral styling). AC 3: per source, by category: candidates, share of the stage, % to the
  * next stage; the individual sources under each share the listed sources (WP23-520 Q4). AC 4 / 5:
@@ -61,12 +61,12 @@ test.describe('WP23-295 full stage detail', () => {
     details({
       ac: ['WP23-295 AC 1', 'WP23-295 AC 1.1', 'WP23-295 AC 1.2', 'WP23-295 AC 1.3'],
       title: 'The full stage detail opens, steps between stages and closes',
-      what: 'Pins Reach, steps forward with the arrow to Hired and back to Reach checking each stage’s detail, then closes it.',
+      what: 'Clicks Reach, opens its full detail from the summary, steps forward with the arrow to Hired and back to Reach checking each stage’s detail, then closes it back to Reach’s summary.',
     }),
     async ({ recruitmentFunnelPage }) => {
       const { funnel } = recruitmentFunnelPage;
       const { detail } = funnel;
-      await funnel.pinStage('Reach');
+      await funnel.openFullDetail('Reach');
       const total = FUNNEL_STAGES.length;
       for (const [index, stage] of FUNNEL_STAGES.entries()) {
         await expect(detail.root).toHaveAccessibleName(`Full stage detail: ${stage.label}`);
@@ -84,6 +84,8 @@ test.describe('WP23-295 full stage detail', () => {
       }
       await detail.closeButton.click();
       await expect(detail.root).toHaveCount(0);
+      // WP23-591: Close goes back to the stage's summary, with the stage still pinned.
+      await expect(funnel.summary.root).toHaveAccessibleName('Stage summary: Reach');
     },
   );
 
@@ -105,7 +107,7 @@ test.describe('WP23-295 full stage detail', () => {
       const { stages } = await loadExpectedFunnel(recruitmentFunnelRepository, WINDOW());
       const expected = FUNNEL_STAGES.map((_, index) => expectedStageSummary(stages, index));
       const readings: StageSummaryReading[] = [];
-      await funnel.pinStage(FUNNEL_STAGES[0]!.label);
+      await funnel.openFullDetail(FUNNEL_STAGES[0]!.label);
       for (const [index, stage] of FUNNEL_STAGES.entries()) {
         await expect(funnel.detail.root).toHaveAccessibleName(`Full stage detail: ${stage.label}`);
         readings.push(await funnel.detail.readSummary());
@@ -144,7 +146,7 @@ test.describe('WP23-295 full stage detail', () => {
       const target =
         FUNNEL_STAGES[index >= 0 ? index : FUNNEL_STAGES.findIndex((s) => s.feed === 'ats') + 1]!;
       console.log('Lost-styling stage: %s', target.label);
-      await funnel.pinStage(target.label);
+      await funnel.openFullDetail(target.label);
       await expect(funnel.detail.root).toHaveAccessibleName(`Full stage detail: ${target.label}`);
 
       const neutral = await funnel.detail.readSummaryColour('Candidates at stage');
@@ -177,7 +179,7 @@ test.describe('WP23-295 full stage detail', () => {
         ),
       }));
       const readings: unknown[] = [];
-      await funnel.pinStage(FUNNEL_STAGES[0]!.label);
+      await funnel.openFullDetail(FUNNEL_STAGES[0]!.label);
       for (const [index, stage] of FUNNEL_STAGES.entries()) {
         await expect(funnel.detail.root).toHaveAccessibleName(`Full stage detail: ${stage.label}`);
         readings.push({
@@ -215,7 +217,7 @@ test.describe('WP23-295 full stage detail', () => {
         ),
       }));
       const readings: unknown[] = [];
-      await funnel.pinStage(atsStages[0]!.label);
+      await funnel.openFullDetail(atsStages[0]!.label);
       for (const [n, stage] of atsStages.entries()) {
         await expect(funnel.detail.root).toHaveAccessibleName(`Full stage detail: ${stage.label}`);
         readings.push({
@@ -238,7 +240,7 @@ test.describe('WP23-295 full stage detail', () => {
     async ({ recruitmentFunnelPage, widgetRequests }) => {
       const { funnel } = recruitmentFunnelPage;
       const mark = widgetRequests.mark();
-      await funnel.pinStage(FUNNEL_STAGES[0]!.label);
+      await funnel.openFullDetail(FUNNEL_STAGES[0]!.label);
       await widgetRequests.waitForQuiet(mark);
       for (const [index, stage] of FUNNEL_STAGES.entries()) {
         await expect(funnel.detail.root).toHaveAccessibleName(`Full stage detail: ${stage.label}`);
@@ -261,7 +263,7 @@ test.describe('WP23-295 full stage detail', () => {
       const { funnel } = recruitmentFunnelPage;
       const last = FUNNEL_STAGES.at(-1)!;
       const mark = widgetRequests.mark();
-      await funnel.pinStage(last.label);
+      await funnel.openFullDetail(last.label);
       await expect(funnel.detail.root).toHaveAccessibleName(`Full stage detail: ${last.label}`);
       await widgetRequests.waitForQuiet(mark);
       await expect(funnel.detail.summary).toBeVisible();

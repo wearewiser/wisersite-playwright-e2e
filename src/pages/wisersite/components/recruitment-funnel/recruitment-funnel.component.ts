@@ -10,13 +10,14 @@ import {
 import type { FunnelTable } from '../../../../types/wisersite/recruitment-funnel.types';
 import { snapshotTableBodyRows } from '../../../../utils/playwright/table-snapshot';
 import { FullStageDetail } from './full-stage-detail.component';
-import { StageHoverPanel } from './stage-hover-panel.component';
+import { StageSummaryPanel } from './stage-summary-panel.component';
 
 /**
  * The end-to-end Recruitment Funnel widget (WP23-85, 86, 295, 307): `<h3>` "Recruitment
  * Funnel", the "Filter by source" chips, a caption, a data-state banner (`role="status"`), one
  * button per stage named "<Stage>: <value>" (the ribbon's only focusable part), the band share
- * labels, the screen-reader table behind the chart, and the hover / pinned panels under it.
+ * labels, the screen-reader table behind the chart, and under it the pinned stage's summary or,
+ * once expanded, its full detail (WP23-591: hovering only magnifies a stage).
  */
 export class RecruitmentFunnelWidget {
   readonly heading: Locator;
@@ -33,7 +34,7 @@ export class RecruitmentFunnelWidget {
    * `aria-hidden` spans with an inline position, in stage then source order.
    */
   readonly bandLabels: Locator;
-  readonly hoverPanel: StageHoverPanel;
+  readonly summary: StageSummaryPanel;
   readonly detail: FullStageDetail;
 
   constructor(private readonly page: Page) {
@@ -52,7 +53,7 @@ export class RecruitmentFunnelWidget {
       name: new RegExp(`^(${FUNNEL_STAGES.map((s) => s.label).join('|')}): `),
     });
     this.bandLabels = this.root.locator('span[aria-hidden="true"][style*="left"]');
-    this.hoverPanel = new StageHoverPanel(this.root);
+    this.summary = new StageSummaryPanel(this.root);
     this.detail = new FullStageDetail(this.root);
   }
 
@@ -76,8 +77,9 @@ export class RecruitmentFunnelWidget {
   }
 
   /**
-   * Hovers a stage and steps the page clock past the hover-intent delay, so a following "no hover
-   * panel" check runs after the panel would have appeared. Needs `takeOverClock()` first.
+   * Hovers a stage and steps the page clock past the hover-intent delay, so a following "no
+   * panel" check runs after the magnify (and any panel) would have appeared. Needs
+   * `takeOverClock()` first.
    */
   async hoverStageAndLetIntentElapse(stage: string): Promise<void> {
     await this.stageButton(stage).hover();
@@ -89,9 +91,19 @@ export class RecruitmentFunnelWidget {
     await this.page.clock.install();
   }
 
-  /** Pins a stage the way a mouse user does: a click on its column. */
+  /** Pins a stage the way a mouse user does: a click on its column, which opens its summary. */
   async pinStage(stage: string): Promise<void> {
     await this.stageButton(stage).click();
+  }
+
+  /**
+   * Opens a stage's full detail the way a mouse user does: pins the stage, waits for its
+   * summary, then clicks the summary's "Full stage detail" button.
+   */
+  async openFullDetail(stage: string): Promise<void> {
+    await this.pinStage(stage);
+    await this.summary.heading.filter({ hasText: stage }).waitFor();
+    await this.summary.fullDetailButton.click();
   }
 
   /** Clicks a source chip with the mouse. */

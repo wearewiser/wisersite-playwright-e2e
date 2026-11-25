@@ -56,8 +56,8 @@ export type FunnelTableRow = {
 /** The funnel table: its source column headers and body rows. */
 export type FunnelTable = { sourceColumns: string[]; rows: FunnelTableRow[] };
 
-/** The hover summary of one stage, read off its tooltip. */
-export type StageHoverReading = {
+/** The pinned stage's summary panel, as read off its "Stage summary" group (WP23-591). */
+export type StageSummaryPanelReading = {
   category: string;
   stage: string;
   /** "Candidates at stage" figure, or null when the stage shows a note instead. */
@@ -67,11 +67,13 @@ export type StageHoverReading = {
   /** The note shown in place of the metrics (zero / no-data stages). */
   note: string | null;
   sources: { source: string; count: string; share: string }[];
+  /** The individual sources of an expanded source (empty while none is expanded). */
+  subSources: { source: string; count: string; share: string }[];
   flow: { fromPrevious: string; cumulative: string; drop: string } | null;
 };
 
-/** The expected hover summary metrics of one stage with data. */
-export type ExpectedStageHover = {
+/** The expected summary-panel metrics of one stage with data. */
+export type ExpectedStagePanel = {
   stage: string;
   candidates: string;
   sources: { source: string; count: string; share: string }[];

@@ -132,14 +132,14 @@ export const FUNNEL_COPY = {
   noValue: '—',
   noDataNote: 'No data',
   zeroNote: 'None at stage',
-  /** A stage with no candidates, on hover and pinned (WP23-86 AC 6 as accepted, D-12). */
+  /** A stage with no candidates, in its summary (WP23-86 AC 6 as accepted, D-12). */
   zeroDetail: 'Nobody reached this stage in these dates.',
   syncingDetail: 'Data unavailable while we re-sync this stage.',
   syncingBannerTitle: 'We’re just catching up',
   widenBannerBody:
     'There is not enough data in this date range to display the funnel. Widen the date range to view it.',
   defaultCaption:
-    'Ribbon thickness is volume at each stage, split into bands by source. Click a source in the key to filter; hover a stage to magnify it, click to pin its full detail.',
+    'Ribbon thickness is volume at each stage, split into bands by source. Click a source in the key to filter; hover a stage to magnify it, click to open its summary.',
   /** Shown on the pinned stage's header in place of "Explore" (WP23-86 AC 2.1). */
   pinnedMarker: 'Pinned',
   firstStageArrival: 'Top of funnel — entry point',
@@ -153,7 +153,7 @@ export const FEED_DATA_NAME: Record<FunnelFeed, string> = {
 };
 
 /**
- * How far the page clock is stepped after a hover before asserting no hover panel appeared: well
+ * How far the page clock is stepped after a hover before asserting no panel appeared: well
  * past the funnel's hover-intent delay (AC silent: per app `RibbonFunnel.tsx` HOVER_INTENT_MS,
  * 50 ms), so an "absent" check runs after the panel would have shown.
  */
