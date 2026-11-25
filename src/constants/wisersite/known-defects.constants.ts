@@ -9,6 +9,21 @@ export const KNOWN_DEFECTS = {
   /** The global date button keeps the server's dates when the user's calendar day differs. */
   dateButtonServerDate:
     "WP23-419 D-3: in a timezone whose date differs from the server's, the global date button shows the server-rendered dates while the board uses the user's own (WP23-198 AC 2.1)",
+  /** Recruitment Funnel summary percentages under 10% show a decimal. */
+  funnelHoverDecimals:
+    'WP23-86 D-5: the stage summary shows percentages under 10% with one decimal; the AC asks for whole numbers (WP23-86 AC 1.6)',
+  /** A mouse click on a source chip unpins the stage. */
+  funnelChipUnpins:
+    'WP23-603: with a stage pinned, a mouse click on a source chip unpins it and closes its detail (WP23-307 AC 2.2)',
+  /** The funnel ribbon counts ATS stages to today, not to the end of a past window. */
+  funnelStagesCountedToToday:
+    "WP23-602: on a range ending before today the ribbon counts each application at the stage it has reached today, not by the range's end (WP23-85 AC 5, NOTE 2.2)",
+  /** Career Site Views shows dashes for its stage flow. */
+  funnelCareerSiteViewsFlowDashed:
+    'WP23-605: Career Site Views shows "—" for arrived from previous, lost, drop and cumulative drop (WP23-86 AC 1.4, 1.6; WP23-295 AC 2.2, 2.3)',
+  /** "Lost at this stage" is drawn orange above 50%. */
+  funnelLostNotNeutral:
+    'WP23-604: "Lost at this stage" is drawn in the warning colour above 50% instead of neutral styling (WP23-295 AC 2.3.1)',
 } as const;
 
 /**
@@ -26,4 +41,9 @@ export const SUSPECTED_DEFECTS = {
  * defect under its own ID. Kept here because this repo never edits the plugin's register. Drop an
  * entry once the register row carries the Jira key itself.
  */
-export const KNOWN_DEFECT_REGISTER_ROWS = {} as const;
+export const KNOWN_DEFECT_REGISTER_ROWS = {
+  'WP23-602': 'WP23-442 D-2',
+  'WP23-603': 'WP23-307 D-4',
+  'WP23-604': 'E2E-2026-11-08 D-3',
+  'WP23-605': 'E2E-2026-11-11 D-1',
+} as const;

@@ -95,3 +95,18 @@ export function formatLongDate(isoDate: string): string {
     day % 100 >= 11 && day % 100 <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][day % 10] ?? 'th');
   return `${MONTH_LONG[monthIndexOf(isoDate)]} ${day}${suffix}, ${isoDate.slice(0, 4)}`;
 }
+
+const INTL_DISPLAY_DATE = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+/**
+ * `"2024-09-01"` -> `"1 Sept 2024"`: `Intl` `en-GB` short dates, which spell September "Sept"
+ * (unlike the picker's date-fns "Sep"). The Recruitment Funnel's banners and stage notes use it.
+ */
+export function formatIntlDisplayDate(isoDate: string): string {
+  return INTL_DISPLAY_DATE.format(new Date(`${isoDate}T00:00:00Z`));
+}

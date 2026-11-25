@@ -71,8 +71,8 @@ data that really exists.
    `details({ ac, title, what, variant })`;
    empty-state-only paths call `markLimitedByData()`; known / suspected defects are labelled
    (known ones by Jira key, mapped in `KNOWN_DEFECT_REGISTER_ROWS` when the register uses
-   another ID), never `test.fail()`. No performance/timing tests; accepted defects aren't
-   tested. `check-oracle-independence.cjs --strict` must pass.
+   another ID), never `test.fail()`. No performance/timing tests; accepted defects carry no
+   label and are tested as accepted only when part of a main flow and important, else not tested. `check-oracle-independence.cjs --strict` must pass.
 7. **Run and stabilise** — `stabilize-e2e-tests`. Environment check, typecheck, lint, oracle
    and defect-label checks, run the specs, fix test bugs, rerun flaky specs with
    `--repeat-each=3`, timezone runs for date-sensitive specs. Classify every remaining failure

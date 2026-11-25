@@ -118,8 +118,10 @@ page objects, and G is the free-form pass that catches what the list doesn't.
    (`canViewAnalytics`, 403 vs 404), empty states, loading, persistence across reload,
    accessibility (screen-reader tables, accessible names), formatting (locale numbers, %,
    rounding). **Performance/timing ACs** ("shown within 1 s") are out of scope for this repo,
-   and defects under "Known defects accepted" in `docs/suspected-defects.md` are no longer
-   tested by decision: list both under `notTested`, not as findings.
+   and defects under "Known defects accepted" in `docs/suspected-defects.md` that are no longer
+   tested by decision: list both under `notTested`, not as findings. An accepted behaviour that
+   is part of a main flow may instead be asserted as accepted (no label, acceptance cited): that
+   is correct, not a finding.
 
 **B. Is it tested right — assertion quality**
 7. **Oracle independence**: expected values come from repositories in `src/db/repositories/`
